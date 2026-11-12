@@ -69,6 +69,14 @@
     .gps-info { font-size: 0.8rem; color: #27ae60; margin-top: 4px; font-weight: bold; }
     .badge { display: inline-block; padding: 3px 8px; background: #e0e0e0; border-radius: 12px; font-size: 0.75rem; margin-top: 4px; }
     .notes-text { margin-top: 5px; white-space: pre-wrap; }
+    .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+    .chip { position: relative; margin: 0; font-weight: normal; }
+    .chip input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+    .chip span { display: inline-block; padding: 8px 12px; border: 1px solid #ccc; border-radius: 20px; background: #fff; font-size: 0.9rem; color: #333; cursor: pointer; user-select: none; }
+    .chip input:checked + span { background: #2980b9; border-color: #2980b9; color: #fff; }
+    .chip input:checked + span::before { content: "✓ "; }
+    .chip input:focus-visible + span { outline: 2px solid #2c3e50; outline-offset: 2px; }
+    .hint { font-size: 0.8rem; color: #888; font-weight: normal; }
     .status-box { font-size: 0.85rem; background: #f8f9fa; border-radius: 8px; padding: 10px; margin-bottom: 10px; line-height: 1.6; }
     .status-box .warn { color: #c0392b; font-weight: bold; }
     .status-box .ok { color: #27ae60; font-weight: bold; }
@@ -124,16 +132,40 @@
           <label>מזהה / שם הנקודה *</label>
           <input type="text" id="point-name" placeholder="לדוגמה: לוקוס 101 / קיר אבני גזית" required>
           
-          <label>סוג הממצא</label>
-          <select id="find-type">
-            <option value="חרסים">חרסים / קרמיקה</option>
-            <option value="מבנה/קיר">מבנה / קיר</option>
-            <option value="מתקן חקלאי">מתקן חקלאי (גת, בית בד וכד')</option>
-            <option value="מערה/בור">מערה / בור מים</option>
-            <option value="מטבע/מתכת">מטבע / חפץ מתכת</option>
-            <option value="עצמות/אורגני">שרידים אורגניים / עצמות</option>
-            <option value="אחר">אחר</option>
+          <label>סוג הממצא <span class="hint">(אפשר לבחור כמה)</span></label>
+          <div class="chips" id="find-types">
+            <label class="chip"><input type="checkbox" value="חרסים"><span>חרסים / קרמיקה</span></label>
+            <label class="chip"><input type="checkbox" value="מבנה/קיר"><span>מבנה / קיר</span></label>
+            <label class="chip"><input type="checkbox" value="מתקן חקלאי"><span>מתקן חקלאי (גת, בית בד וכד')</span></label>
+            <label class="chip"><input type="checkbox" value="מערה/בור"><span>מערה / בור מים</span></label>
+            <label class="chip"><input type="checkbox" value="מטבע/מתכת"><span>מטבע / חפץ מתכת</span></label>
+            <label class="chip"><input type="checkbox" value="עצמות/אורגני"><span>שרידים אורגניים / עצמות</span></label>
+            <label class="chip"><input type="checkbox" value="אחר"><span>אחר</span></label>
+          </div>
+
+          <label>צפיפות ממצא</label>
+          <select id="density">
+            <option value="">— לא צוין —</option>
+            <option value="ממצא בודד">ממצא בודד</option>
+            <option value="דלילה">דלילה</option>
+            <option value="בינונית">בינונית</option>
+            <option value="צפופה">צפופה</option>
+            <option value="צפופה מאוד">צפופה מאוד</option>
           </select>
+
+          <label>גודל אתר</label>
+          <div class="row">
+            <div style="flex:2;">
+              <input type="number" step="any" min="0" id="site-size" placeholder="לדוגמה: 2.5">
+            </div>
+            <div>
+              <select id="site-size-unit">
+                <option value="דונם">דונם</option>
+                <option value="מ״ר">מ״ר</option>
+                <option value="הקטר">הקטר</option>
+              </select>
+            </div>
+          </div>
 
           <label>מיקום GPS (נ"צ)</label>
           <button type="button" class="btn-gps" onclick="getLocation()">📍 דגום מיקום נוכחי</button>
@@ -174,6 +206,9 @@
             <option value="בינוני">בינוני</option>
             <option value="הרוס/גרוע">הרוס / גרוע</option>
           </select>
+
+          <label>תיאור נוף</label>
+          <input type="text" id="landscape" placeholder="לדוגמה: מדרון מתון, ערוץ נחל, רכס, מישור לס">
 
           <label>הערות ותיאור מפורט</label>
           <textarea id="notes" placeholder="תיאור הממצא, מידות, מאפיינים מיוחדים..."></textarea>
@@ -262,6 +297,19 @@
     // Key used to recognise the same point when importing a backup twice
     function pointKey(p) {
       return p.createdAt || [p.name, p.lat, p.lng, p.timestamp].join('|');
+    }
+
+    // --- Find types (multi-select) ---
+    function getFindTypes(p) {
+      if (Array.isArray(p.findTypes)) return p.findTypes;
+      return p.findType ? String(p.findType).split(', ').filter(Boolean) : [];
+    }
+    function findTypeText(p) { return getFindTypes(p).join(', '); }
+    function siteSizeText(p) {
+      return p.siteSize != null && p.siteSize !== '' ? `${p.siteSize} ${p.siteSizeUnit || ''}`.trim() : '';
+    }
+    function setCheckedFindTypes(values) {
+      document.querySelectorAll('#find-types input').forEach(cb => { cb.checked = values.includes(cb.value); });
     }
 
     // --- Surveyor name (required before adding data) ---
@@ -543,7 +591,11 @@
       const altVal = document.getElementById('alt').value;
       const pointData = {
         name: document.getElementById('point-name').value.trim(),
-        findType: document.getElementById('find-type').value,
+        findTypes: [...document.querySelectorAll('#find-types input:checked')].map(cb => cb.value),
+        density: document.getElementById('density').value,
+        siteSize: document.getElementById('site-size').value === '' ? null : parseFloat(document.getElementById('site-size').value),
+        siteSizeUnit: document.getElementById('site-size-unit').value,
+        landscape: document.getElementById('landscape').value.trim(),
         lat: parseFloat(document.getElementById('lat').value),
         lng: parseFloat(document.getElementById('lng').value),
         alt: altVal === '' ? null : parseFloat(altVal),
@@ -553,6 +605,7 @@
         notes: document.getElementById('notes').value,
         image: currentImageData
       };
+      pointData.findType = pointData.findTypes.join(', '); // text version, kept for exports and older backups
 
       const tx = db.transaction("points", "readwrite");
       const store = tx.objectStore("points");
@@ -611,18 +664,21 @@
         const cursor = e.target.result;
         if (cursor) {
           const item = cursor.value;
-          const haystack = [item.name, item.notes, item.period, item.findType, item.surveyor].map(v => String(v ?? '').toLowerCase());
+          const haystack = [item.name, item.notes, item.period, findTypeText(item), item.surveyor, item.landscape, item.density].map(v => String(v ?? '').toLowerCase());
           if (!search || haystack.some(v => v.includes(search))) {
             const div = document.createElement('div');
             div.className = 'point-item';
             const altText = item.alt != null && item.alt !== '' ? ` (${escapeHtml(item.alt)}m)` : '';
             div.innerHTML = `
-              <strong>${escapeHtml(item.name)}</strong> <span class="badge">${escapeHtml(item.findType)}</span>
+              <strong>${escapeHtml(item.name)}</strong> ${getFindTypes(item).map(t => `<span class="badge">${escapeHtml(t)}</span>`).join(' ')}
               <br><small>📅 ${escapeHtml(displayTime(item))} | 📍 ${num(item.lat, 5)}, ${num(item.lng, 5)}${altText}</small>
               ${item.surveyor ? `<br><small>👤 ${escapeHtml(item.surveyor)}</small>` : ''}
               ${item.updatedAt ? `<br><small>✏️ עודכן: ${escapeHtml(fmtDate(item.updatedAt))}${item.updatedBy ? ' ע״י ' + escapeHtml(item.updatedBy) : ''}</small>` : ''}
               ${item.period ? `<br><small>⏳ תקופה: ${escapeHtml(item.period)}</small>` : ''}
               ${item.preservation ? `<br><small>🏛️ השתמרות: ${escapeHtml(item.preservation)}</small>` : ''}
+              ${item.density ? `<br><small>🔸 צפיפות: ${escapeHtml(item.density)}</small>` : ''}
+              ${siteSizeText(item) ? `<br><small>📐 גודל אתר: ${escapeHtml(siteSizeText(item))}</small>` : ''}
+              ${item.landscape ? `<br><small>⛰️ נוף: ${escapeHtml(item.landscape)}</small>` : ''}
               ${item.notes ? `<p class="notes-text">${escapeHtml(item.notes)}</p>` : ''}
               ${item.image ? `<img src="${escapeHtml(item.image)}" alt="">` : ''}
               <div class="point-actions">
@@ -649,7 +705,11 @@
         resetForm();
         document.getElementById('point-id').value = p.id;
         document.getElementById('point-name').value = p.name ?? '';
-        document.getElementById('find-type').value = p.findType ?? 'אחר';
+        setCheckedFindTypes(getFindTypes(p));
+        document.getElementById('density').value = p.density ?? '';
+        document.getElementById('site-size').value = p.siteSize ?? '';
+        document.getElementById('site-size-unit').value = p.siteSizeUnit || 'דונם';
+        document.getElementById('landscape').value = p.landscape ?? '';
         document.getElementById('lat').value = p.lat;
         document.getElementById('lng').value = p.lng;
         document.getElementById('alt').value = p.alt ?? '';
@@ -706,7 +766,9 @@
           if (isFinite(p.lat) && isFinite(p.lng)) {
             const marker = L.marker([p.lat, p.lng]).bindPopup(`
               <b>${escapeHtml(p.name)}</b><br>
-              ${escapeHtml(p.findType)}<br>
+              ${escapeHtml(findTypeText(p))}<br>
+              ${p.density ? 'צפיפות: ' + escapeHtml(p.density) + '<br>' : ''}
+              ${siteSizeText(p) ? 'גודל: ' + escapeHtml(siteSizeText(p)) + '<br>' : ''}
               ${p.surveyor ? '👤 ' + escapeHtml(p.surveyor) + '<br>' : ''}
               ${p.notes ? escapeHtml(p.notes) + '<br>' : ''}
               ${p.image ? `<img src="${escapeHtml(p.image)}" style="width:100px;margin-top:5px;border-radius:4px;">` : ''}
@@ -756,11 +818,12 @@
     function exportCSV() {
       getAllPoints(points => {
         if (!points.length) return alert("אין נתונים לייצוא");
-        const header = ["ID", "שם", "סוג ממצא", "קו רוחב", "קו אורך", "גובה", "דיוק", "תקופה", "מצב השתמרות", "הערות", "סוקר/ת", "זמן דגימה", "זמן דגימה (ISO)", "עודכן (ISO)", "עודכן ע״י", "יש תמונה"];
+        const header = ["ID", "שם", "סוג ממצא", "קו רוחב", "קו אורך", "גובה", "דיוק", "תקופה", "מצב השתמרות", "צפיפות ממצא", "גודל אתר", "יחידת גודל", "תיאור נוף", "הערות", "סוקר/ת", "זמן דגימה", "זמן דגימה (ISO)", "עודכן (ISO)", "עודכן ע״י", "יש תמונה"];
         let csv = "﻿" + header.map(csvField).join(",") + "\r\n"; // UTF-8 BOM for Excel
 
         points.forEach(p => {
-          csv += [p.id, p.name, p.findType, p.lat, p.lng, p.alt ?? '', p.acc, p.period, p.preservation, p.notes, p.surveyor || '',
+          csv += [p.id, p.name, findTypeText(p), p.lat, p.lng, p.alt ?? '', p.acc, p.period, p.preservation,
+                  p.density || '', p.siteSize ?? '', p.siteSize != null && p.siteSize !== '' ? (p.siteSizeUnit || '') : '', p.landscape || '', p.notes, p.surveyor || '',
                   displayTime(p), p.createdAt || '', p.updatedAt || '', p.updatedBy || '', p.image ? 'כן' : 'לא']
                  .map(csvField).join(",") + "\r\n";
         });
@@ -784,7 +847,12 @@
             properties: {
               id: p.id,
               name: p.name,
-              findType: p.findType,
+              findType: findTypeText(p),
+              findTypes: getFindTypes(p),
+              density: p.density || null,
+              siteSize: p.siteSize ?? null,
+              siteSizeUnit: p.siteSize != null && p.siteSize !== '' ? (p.siteSizeUnit || null) : null,
+              landscape: p.landscape || null,
               period: p.period,
               preservation: p.preservation,
               notes: p.notes,
@@ -812,7 +880,10 @@
     <name>סקר ארכיאולוגי</name>`;
 
         points.filter(p => isFinite(p.lat) && isFinite(p.lng)).forEach(p => {
-          const desc = `סוג: ${escapeHtml(p.findType)}<br>
+          const desc = `סוג: ${escapeHtml(findTypeText(p))}<br>
+        צפיפות: ${escapeHtml(p.density)}<br>
+        גודל אתר: ${escapeHtml(siteSizeText(p))}<br>
+        נוף: ${escapeHtml(p.landscape)}<br>
         תקופה: ${escapeHtml(p.period)}<br>
         השתמרות: ${escapeHtml(p.preservation)}<br>
         סוקר/ת: ${escapeHtml(p.surveyor)}<br>
