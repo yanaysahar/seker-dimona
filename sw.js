@@ -1,6 +1,6 @@
 // Service worker: makes the app load without reception.
 // Bump APP_CACHE when changing any of the app files below.
-const APP_CACHE = 'archeo-app-v11';
+const APP_CACHE = 'archeo-app-v12';
 const TILE_CACHE = 'archeo-tiles-v1';
 const MAX_TILES = 3000;
 
@@ -23,7 +23,7 @@ const APP_FILES = [
 ];
 
 self.addEventListener('install', event => {
-  event.waitUntil(caches.open(APP_CACHE).then(c => c.addAll(APP_FILES)).then(() => self.skipWaiting()));
+  event.waitUntil(caches.open(APP_CACHE).then(c => c.addAll(APP_FILES.map(u => new Request(u, { cache: 'reload' })))).then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', event => {
@@ -73,6 +73,18 @@ self.addEventListener('fetch', event => {
         caches.open(APP_CACHE).then(c => c.put('./index.html', copy));
         return res;
       }).catch(() => caches.match('./index.html'))
+    );
+    return;
+  }
+
+  // Manifest (app name / icon): network first, so changes always reach the phone
+  if (url.pathname.endsWith('manifest.json')) {
+    event.respondWith(
+      fetch(req, { cache: 'no-cache' }).then(res => {
+        const copy = res.clone();
+        caches.open(APP_CACHE).then(c => c.put('./manifest.json', copy));
+        return res;
+      }).catch(() => caches.match('./manifest.json'))
     );
     return;
   }
