@@ -14,6 +14,7 @@
 const SHEET_NAME = 'נקודות';
 const PHOTO_FOLDER = 'סקר דימונה - תמונות';
 const EDIT_WINDOW_HOURS = 2;
+const SCRIPT_VERSION = 3; // shown when the web-app link is opened in a browser
 
 const HEADERS = [
   'מזהה ייחודי', 'מספר נקודה', 'סוג ממצא', 'תקופה', 'מצב השתמרות (1-5)', 'מפנה',
@@ -94,9 +95,11 @@ function trashPhoto_(url) {
   try { DriveApp.getFileById(m[0]).setTrashed(true); } catch (e) {}
 }
 
-// Lets the app (or you, in a browser) check that the link works.
+// Opening the web-app link in a browser checks that it works, shows which
+// version is running, and brings the sheet's header row up to date.
 function doGet() {
-  return json_({ ok: true, app: 'seker-dimona' });
+  getSheet_();
+  return json_({ ok: true, app: 'seker-dimona', version: SCRIPT_VERSION });
 }
 
 function getSheet_() {
