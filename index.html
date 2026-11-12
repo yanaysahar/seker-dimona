@@ -98,6 +98,14 @@
     .compass { direction: ltr; display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 6px; max-width: 360px; }
     .compass .chip span { display: block; text-align: center; padding: 10px 2px; font-size: 0.85rem; border-radius: 10px; }
     .compass-center { display: flex; align-items: center; justify-content: center; font-size: 1.6rem; }
+    .period-picker { margin-top: 6px; border: 1px solid var(--line); border-radius: 8px; background: #fff; overflow: hidden; }
+    .period-selected { padding: 8px 10px; font-size: 0.85rem; color: var(--ink-soft); background: var(--sand); border-bottom: 1px solid var(--line); }
+    .period-selected b { color: var(--umber); }
+    .period-list { max-height: 230px; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+    .period-group { position: sticky; top: 0; background: var(--flint); color: var(--muted); font-size: 0.75rem; font-weight: bold; padding: 5px 10px; border-bottom: 1px solid var(--line); }
+    .period-item { display: flex; align-items: center; gap: 10px; margin: 0; padding: 10px; font-weight: normal; font-size: 0.95rem; color: var(--ink); border-bottom: 1px solid #f1eadb; cursor: pointer; }
+    .period-item input { width: 20px; height: 20px; margin: 0; flex: none; accent-color: var(--umber); }
+    .period-item:has(input:checked) { background: #f6eedf; }
     .hint { font-size: 0.8rem; color: var(--muted); font-weight: normal; }
     .status-box { font-size: 0.85rem; background: var(--sand); border-radius: 8px; padding: 10px; margin-bottom: 10px; line-height: 1.6; }
     .status-box .warn { color: var(--brick); font-weight: bold; }
@@ -210,7 +218,10 @@
           <button type="button" id="btn-remove-img" class="btn-danger" style="display:none; margin-top:5px;" onclick="removeImage()">🗑️ הסר תמונה</button>
 
           <label>תקופה משוערת</label>
-          <input type="text" id="period" placeholder="לדוגמה: ברזל ב', ביזנטי, רומי">
+          <div class="period-picker">
+            <div id="period-selected" class="period-selected">לא נבחרה תקופה</div>
+            <div id="period-list" class="period-list" role="group" aria-label="תקופות"></div>
+          </div>
 
           <label>מצב השתמרות <span class="hint">(1 = הרוס, 5 = שמור מאוד)</span></label>
           <div class="chips scale" id="preservation">
@@ -289,7 +300,7 @@
         <h3>שחזור / ייבוא גיבוי</h3>
         <p style="font-size: 0.85rem; color: var(--ink-soft); margin-bottom: 8px;">נקודות שכבר קיימות במכשיר לא ישוכפלו.</p>
         <input type="file" id="import-file" accept=".json" onchange="importJSONBackup(event)">
-        <p style="font-size: 0.75rem; color: var(--muted); text-align: center; margin-top: 20px;">גרסה 2.0 · 12.11.2026</p>
+        <p style="font-size: 0.75rem; color: var(--muted); text-align: center; margin-top: 20px;">גרסה 2.1 · 12.11.2026</p>
       </div>
     </div>
 
@@ -360,6 +371,54 @@
     });
     function setCheckedFindTypes(values) {
       document.querySelectorAll('#find-types input').forEach(cb => { cb.checked = values.includes(cb.value); });
+    }
+
+    // --- Periods (fixed list, multiple choice) ---
+    const PERIOD_GROUPS = [
+      ['פרהיסטוריה', ['פלאוליתי תחתון', 'פלאוליתי תיכון', 'פלאוליתי עליון', 'אפיפלאוליתי', 'ניאוליתי קדם־קרמי', 'ניאוליתי קרמי', 'כלקוליתי']],
+      ['ברונזה וברזל', ['ברונזה קדומה', 'ברונזה ביניימית', 'ברונזה תיכונה', 'ברונזה מאוחרת', "ברזל א'", "ברזל ב'"]],
+      ['תקופות קלאסיות', ['פרסי', 'הלניסטי', 'נבטי', 'רומי קדום', 'רומי מאוחר', 'ביזנטי']],
+      ['ימי הביניים ואילך', ['אסלאמי קדום', 'צלבני', 'ממלוכי', "עות'מאני", 'מודרני']],
+      ['אחר', ['לא מזוהה']]
+    ];
+    const periodList = document.getElementById('period-list');
+    function addPeriodRow(value, container) {
+      const lab = document.createElement('label');
+      lab.className = 'period-item';
+      const cb = document.createElement('input');
+      cb.type = 'checkbox'; cb.value = value;
+      cb.addEventListener('change', updatePeriodSummary);
+      lab.append(cb, document.createTextNode(value));
+      container.appendChild(lab);
+      return cb;
+    }
+    PERIOD_GROUPS.forEach(([group, items]) => {
+      const h = document.createElement('div'); h.className = 'period-group'; h.textContent = group;
+      periodList.appendChild(h);
+      items.forEach(v => addPeriodRow(v, periodList));
+    });
+    function getSelectedPeriods() {
+      return [...periodList.querySelectorAll('input:checked')].map(cb => cb.value);
+    }
+    function updatePeriodSummary() {
+      const sel = getSelectedPeriods();
+      document.getElementById('period-selected').innerHTML = sel.length
+        ? 'נבחרו: <b>' + sel.map(escapeHtml).join(', ') + '</b>'
+        : 'לא נבחרה תקופה';
+    }
+    function getPeriods(p) {
+      if (Array.isArray(p.periods)) return p.periods;
+      return p.period ? String(p.period).split(',').map(x => x.trim()).filter(Boolean) : [];
+    }
+    function setSelectedPeriods(values) {
+      periodList.querySelectorAll('.period-custom').forEach(el => el.remove());
+      periodList.querySelectorAll('input').forEach(cb => { cb.checked = values.includes(cb.value); });
+      // Values typed freely in older versions: keep them, shown at the end of the list
+      const known = new Set([...periodList.querySelectorAll('input')].map(cb => cb.value));
+      values.filter(v => !known.has(v)).forEach(v => {
+        const cb = addPeriodRow(v, periodList); cb.checked = true; cb.closest('label').classList.add('period-custom');
+      });
+      updatePeriodSummary();
     }
 
     // --- Surveyor name (required before adding data) ---
@@ -650,12 +709,13 @@
         lng: parseFloat(document.getElementById('lng').value),
         alt: altVal === '' ? null : parseFloat(altVal),
         acc: parseFloat(document.getElementById('acc').value) || 0,
-        period: document.getElementById('period').value.trim(),
+        periods: getSelectedPeriods(),
         preservation: getChoice('preservation'),
         aspect: getChoice('aspect'),
         notes: document.getElementById('notes').value,
         image: currentImageData
       };
+      pointData.period = pointData.periods.join(', ');
       pointData.findType = pointData.findTypes.join(', '); // text version, kept for exports and older backups
 
       const tx = db.transaction("points", "readwrite");
@@ -693,6 +753,7 @@
     function resetForm() {
       document.getElementById('survey-form').reset();
       document.getElementById('point-id').value = '';
+      setSelectedPeriods([]);
       removeImage();
       document.getElementById('gps-status').innerText = '';
       document.getElementById('form-title').innerText = 'הוספת נקודת סקר';
@@ -765,7 +826,7 @@
         document.getElementById('lng').value = p.lng;
         document.getElementById('alt').value = p.alt ?? '';
         document.getElementById('acc').value = p.acc ?? '';
-        document.getElementById('period').value = p.period ?? '';
+        setSelectedPeriods(getPeriods(p));
         setChoice('preservation', preservationValue(p));
         setChoice('aspect', p.aspect || '');
         document.getElementById('notes').value = p.notes ?? '';
@@ -905,6 +966,7 @@
               siteSize_m2: siteSizeM2(p),
               landscape: p.landscape || null,
               period: p.period,
+              periods: getPeriods(p),
               preservation: preservationValue(p) === '' ? null : Number(preservationValue(p)),
               aspect: p.aspect || null,
               aspect_code: ASPECT_CODES[p.aspect] || null,
