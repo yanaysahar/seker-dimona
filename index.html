@@ -153,19 +153,8 @@
             <option value="צפופה מאוד">צפופה מאוד</option>
           </select>
 
-          <label>גודל אתר</label>
-          <div class="row">
-            <div style="flex:2;">
-              <input type="number" step="any" min="0" id="site-size" placeholder="לדוגמה: 2.5">
-            </div>
-            <div>
-              <select id="site-size-unit">
-                <option value="דונם">דונם</option>
-                <option value="מ״ר">מ״ר</option>
-                <option value="הקטר">הקטר</option>
-              </select>
-            </div>
-          </div>
+          <label>גודל אתר (מ״ר)</label>
+          <input type="number" step="any" min="0" inputmode="decimal" id="site-size" placeholder="לדוגמה: 600">
 
           <label>מיקום GPS (נ"צ)</label>
           <button type="button" class="btn-gps" onclick="getLocation()">📍 דגום מיקום נוכחי</button>
@@ -201,11 +190,11 @@
           <input type="text" id="period" placeholder="לדוגמה: ברזל ב', ביזנטי, רומי">
 
           <label>מצב השתמרות</label>
-          <select id="preservation">
-            <option value="טוב מאוד">טוב מאוד</option>
-            <option value="בינוני">בינוני</option>
-            <option value="הרוס/גרוע">הרוס / גרוע</option>
-          </select>
+          <div class="chips" id="preservation">
+            <label class="chip"><input type="radio" name="preservation" value="טוב מאוד"><span>טוב מאוד</span></label>
+            <label class="chip"><input type="radio" name="preservation" value="בינוני"><span>בינוני</span></label>
+            <label class="chip"><input type="radio" name="preservation" value="הרוס/גרוע"><span>הרוס / גרוע</span></label>
+          </div>
 
           <label>תיאור נוף</label>
           <input type="text" id="landscape" placeholder="לדוגמה: מדרון מתון, ערוץ נחל, רכס, מישור לס">
@@ -262,7 +251,7 @@
         <h3>שחזור / ייבוא גיבוי</h3>
         <p style="font-size: 0.85rem; color: #666; margin-bottom: 8px;">נקודות שכבר קיימות במכשיר לא ישוכפלו.</p>
         <input type="file" id="import-file" accept=".json" onchange="importJSONBackup(event)">
-        <p style="font-size: 0.75rem; color: #aaa; text-align: center; margin-top: 20px;">גרסה 1.2 · 12.11.2026</p>
+        <p style="font-size: 0.75rem; color: #aaa; text-align: center; margin-top: 20px;">גרסה 1.3 · 12.11.2026</p>
       </div>
     </div>
 
@@ -306,9 +295,27 @@
       return p.findType ? String(p.findType).split(', ').filter(Boolean) : [];
     }
     function findTypeText(p) { return getFindTypes(p).join(', '); }
-    function siteSizeText(p) {
-      return p.siteSize != null && p.siteSize !== '' ? `${p.siteSize} ${p.siteSizeUnit || ''}`.trim() : '';
+    // Site size is always in square metres; points saved earlier in dunam/hectare are converted
+    const UNIT_TO_M2 = { 'מ״ר': 1, 'דונם': 1000, 'הקטר': 10000 };
+    function siteSizeM2(p) {
+      if (p.siteSize == null || p.siteSize === '' || !isFinite(p.siteSize)) return null;
+      const f = UNIT_TO_M2[p.siteSizeUnit] || 1;
+      return Math.round(p.siteSize * f * 100) / 100;
     }
+    function siteSizeText(p) { const v = siteSizeM2(p); return v == null ? '' : `${v} מ״ר`; }
+
+    // Preservation: single choice, tap the selected option again to clear it
+    function getPreservation() {
+      const el = document.querySelector('#preservation input:checked');
+      return el ? el.value : '';
+    }
+    function setPreservation(v) {
+      document.querySelectorAll('#preservation input').forEach(r => { r.checked = r.value === v; });
+    }
+    document.querySelectorAll('#preservation input').forEach(r => {
+      r.closest('label').addEventListener('pointerdown', () => { r.dataset.wasChecked = r.checked ? '1' : ''; });
+      r.addEventListener('click', () => { if (r.dataset.wasChecked) { r.checked = false; r.dataset.wasChecked = ''; } });
+    });
     function setCheckedFindTypes(values) {
       document.querySelectorAll('#find-types input').forEach(cb => { cb.checked = values.includes(cb.value); });
     }
@@ -595,14 +602,14 @@
         findTypes: [...document.querySelectorAll('#find-types input:checked')].map(cb => cb.value),
         density: document.getElementById('density').value,
         siteSize: document.getElementById('site-size').value === '' ? null : parseFloat(document.getElementById('site-size').value),
-        siteSizeUnit: document.getElementById('site-size-unit').value,
+        siteSizeUnit: 'מ״ר',
         landscape: document.getElementById('landscape').value.trim(),
         lat: parseFloat(document.getElementById('lat').value),
         lng: parseFloat(document.getElementById('lng').value),
         alt: altVal === '' ? null : parseFloat(altVal),
         acc: parseFloat(document.getElementById('acc').value) || 0,
         period: document.getElementById('period').value.trim(),
-        preservation: document.getElementById('preservation').value,
+        preservation: getPreservation(),
         notes: document.getElementById('notes').value,
         image: currentImageData
       };
@@ -708,15 +715,14 @@
         document.getElementById('point-name').value = p.name ?? '';
         setCheckedFindTypes(getFindTypes(p));
         document.getElementById('density').value = p.density ?? '';
-        document.getElementById('site-size').value = p.siteSize ?? '';
-        document.getElementById('site-size-unit').value = p.siteSizeUnit || 'דונם';
+        document.getElementById('site-size').value = siteSizeM2(p) ?? '';
         document.getElementById('landscape').value = p.landscape ?? '';
         document.getElementById('lat').value = p.lat;
         document.getElementById('lng').value = p.lng;
         document.getElementById('alt').value = p.alt ?? '';
         document.getElementById('acc').value = p.acc ?? '';
         document.getElementById('period').value = p.period ?? '';
-        document.getElementById('preservation').value = p.preservation ?? 'בינוני';
+        setPreservation(p.preservation || '');
         document.getElementById('notes').value = p.notes ?? '';
 
         if (p.image) {
@@ -819,12 +825,12 @@
     function exportCSV() {
       getAllPoints(points => {
         if (!points.length) return alert("אין נתונים לייצוא");
-        const header = ["ID", "שם", "סוג ממצא", "קו רוחב", "קו אורך", "גובה", "דיוק", "תקופה", "מצב השתמרות", "צפיפות ממצא", "גודל אתר", "יחידת גודל", "תיאור נוף", "הערות", "סוקר/ת", "זמן דגימה", "זמן דגימה (ISO)", "עודכן (ISO)", "עודכן ע״י", "יש תמונה"];
+        const header = ["ID", "שם", "סוג ממצא", "קו רוחב", "קו אורך", "גובה", "דיוק", "תקופה", "מצב השתמרות", "צפיפות ממצא", "גודל אתר (מ״ר)", "תיאור נוף", "הערות", "סוקר/ת", "זמן דגימה", "זמן דגימה (ISO)", "עודכן (ISO)", "עודכן ע״י", "יש תמונה"];
         let csv = "﻿" + header.map(csvField).join(",") + "\r\n"; // UTF-8 BOM for Excel
 
         points.forEach(p => {
           csv += [p.id, p.name, findTypeText(p), p.lat, p.lng, p.alt ?? '', p.acc, p.period, p.preservation,
-                  p.density || '', p.siteSize ?? '', p.siteSize != null && p.siteSize !== '' ? (p.siteSizeUnit || '') : '', p.landscape || '', p.notes, p.surveyor || '',
+                  p.density || '', siteSizeM2(p) ?? '', p.landscape || '', p.notes, p.surveyor || '',
                   displayTime(p), p.createdAt || '', p.updatedAt || '', p.updatedBy || '', p.image ? 'כן' : 'לא']
                  .map(csvField).join(",") + "\r\n";
         });
@@ -851,8 +857,7 @@
               findType: findTypeText(p),
               findTypes: getFindTypes(p),
               density: p.density || null,
-              siteSize: p.siteSize ?? null,
-              siteSizeUnit: p.siteSize != null && p.siteSize !== '' ? (p.siteSizeUnit || null) : null,
+              siteSize_m2: siteSizeM2(p),
               landscape: p.landscape || null,
               period: p.period,
               preservation: p.preservation,
