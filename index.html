@@ -3,12 +3,12 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>סקר ארכיאולוגי בשטח</title>
+  <title>סקר דימונה</title>
   <meta name="theme-color" content="#34281f">
   <meta name="description" content="אפליקציה לתיעוד נקודות סקר ארכיאולוגי בשטח: GPS, תמונות, מפה וייצוא ל-Excel / GIS / Google Earth. עובדת גם בלי קליטה.">
   <!-- Link preview (WhatsApp / email / Facebook) -->
   <meta property="og:type" content="website">
-  <meta property="og:title" content="סקר ארכיאולוגי בשטח">
+  <meta property="og:title" content="סקר דימונה">
   <meta property="og:description" content="תיעוד נקודות סקר עם GPS, תמונות ומפה — עובד גם בלי קליטה. פתחו והוסיפו למסך הבית.">
   <meta property="og:url" content="https://yanaysahar.github.io/seker-dimona/">
   <meta property="og:image" content="https://yanaysahar.github.io/seker-dimona/og-image.png">
@@ -119,7 +119,7 @@
 </head>
 <body>
 
-  <header><img src="icon-192.png" alt="" class="logo">סקר ארכיאולוגי בשטח</header>
+  <header><img src="icon-192.png" alt="" class="logo">סקר דימונה</header>
   <div id="name-modal" role="dialog" aria-modal="true" aria-labelledby="name-modal-title">
     <div class="card">
       <h3 id="name-modal-title">👤 מי סוקר?</h3>
@@ -288,7 +288,7 @@
         <h3>שחזור / ייבוא גיבוי</h3>
         <p style="font-size: 0.85rem; color: var(--ink-soft); margin-bottom: 8px;">נקודות שכבר קיימות במכשיר לא ישוכפלו.</p>
         <input type="file" id="import-file" accept=".json" onchange="importJSONBackup(event)">
-        <p style="font-size: 0.75rem; color: var(--muted); text-align: center; margin-top: 20px;">גרסה 1.7 · 12.11.2026</p>
+        <p style="font-size: 0.75rem; color: var(--muted); text-align: center; margin-top: 20px;">גרסה 1.8 · 12.11.2026</p>
       </div>
     </div>
 
@@ -472,12 +472,12 @@
 
     // --- Sharing the app link ---
     const APP_URL = (location.protocol.startsWith('http') ? location.origin + location.pathname.replace(/index\.html$/, '') : 'https://yanaysahar.github.io/seker-dimona/');
-    const SHARE_TEXT = 'אפליקציית סקר ארכיאולוגי בשטח — פתחו בדפדפן (Safari באייפון / Chrome באנדרואיד) והוסיפו למסך הבית:';
+    const SHARE_TEXT = 'אפליקציית סקר דימונה — פתחו בדפדפן (Safari באייפון / Chrome באנדרואיד) והוסיפו למסך הבית:';
     document.getElementById('share-link').value = APP_URL;
 
     async function shareApp() {
       if (navigator.share) {
-        try { await navigator.share({ title: 'סקר ארכיאולוגי בשטח', text: SHARE_TEXT, url: APP_URL }); return; }
+        try { await navigator.share({ title: 'סקר דימונה', text: SHARE_TEXT, url: APP_URL }); return; }
         catch (e) { if (e.name === 'AbortError') return; }
       }
       try { await navigator.clipboard.writeText(APP_URL); alert('הקישור הועתק — הדבק אותו בוואטסאפ או במייל'); }
@@ -487,7 +487,7 @@
       location.href = 'https://wa.me/?text=' + encodeURIComponent(SHARE_TEXT + '\n' + APP_URL);
     }
     function shareEmail() {
-      location.href = 'mailto:?subject=' + encodeURIComponent('אפליקציית סקר ארכיאולוגי בשטח') +
+      location.href = 'mailto:?subject=' + encodeURIComponent('אפליקציית סקר דימונה') +
         '&body=' + encodeURIComponent(SHARE_TEXT + '\n\n' + APP_URL);
     }
 
@@ -929,7 +929,7 @@
         let kml = `<?xml version="1.0" encoding="UTF-8"?>
 <kml xmlns="http://www.opengis.net/kml/2.2">
   <Document>
-    <name>סקר ארכיאולוגי</name>`;
+    <name>סקר דימונה</name>`;
 
         points.filter(p => isFinite(p.lat) && isFinite(p.lng)).forEach(p => {
           const desc = `סוג: ${escapeHtml(findTypeText(p))}<br>
