@@ -308,7 +308,7 @@
         <h3>שחזור / ייבוא גיבוי</h3>
         <p style="font-size: 0.85rem; color: var(--ink-soft); margin-bottom: 8px;">נקודות שכבר קיימות במכשיר לא ישוכפלו.</p>
         <input type="file" id="import-file" accept=".json" onchange="importJSONBackup(event)">
-        <p style="font-size: 0.75rem; color: var(--muted); text-align: center; margin-top: 20px;">גרסה 2.2 · 12.11.2026</p>
+        <p style="font-size: 0.75rem; color: var(--muted); text-align: center; margin-top: 20px;">גרסה 2.3 · 12.11.2026</p>
       </div>
     </div>
 
@@ -434,6 +434,12 @@
     const SYNC_URL = '';
     let syncing = false;
     let lastSyncError = '';
+    // A sent point can still be edited for this long (the sheet enforces it by its own clock)
+    const EDIT_WINDOW_MS = 2 * 60 * 60 * 1000;
+    function editDeadline(p) { return p.syncedAt ? new Date(Date.parse(p.syncedAt) + EDIT_WINDOW_MS) : null; }
+    function isLocked(p) { return !!p.syncedAt && (p.editLocked || Date.now() > editDeadline(p).getTime()); }
+    function fmtTime(d) { return d.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' }); }
+    const LOCKED_MSG = "עברו שעתיים מאז שהנקודה נשלחה לגיליון, ולכן היא נעולה. תיקונים — אצל מנהל הסקר.";
 
     function newUid() {
       if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
@@ -446,25 +452,37 @@
         preservation: preservationValue(p), aspect: p.aspect || '', density: p.density || '',
         siteSize: siteSizeM2(p), landscape: p.landscape || '', notes: p.notes || '',
         lat: p.lat, lng: p.lng, alt: p.alt, acc: p.acc, surveyor: p.surveyor || '',
-        createdAt: p.createdAt || '', timeText: displayTime(p), image: p.image || ''
+        createdAt: p.createdAt || '', timeText: displayTime(p),
+        // after the first send, the photo is sent again only if it was changed
+        image: (!p.syncedAt || p.imageDirty) ? (p.image || '') : '',
+        removeImage: !!(p.syncedAt && p.imageDirty && !p.image),
+        update: !!p.syncedAt
       };
     }
 
     function getPending() {
       return new Promise(resolve => {
         const req = db.transaction("points", "readonly").objectStore("points").getAll();
-        req.onsuccess = () => resolve(req.result.filter(p => !p.syncedAt));
+        req.onsuccess = () => resolve(req.result.filter(p => !p.syncedAt || p.dirty));
         req.onerror = () => resolve([]);
       });
     }
 
-    function markSynced(p) {
+    // result: 'sent' | 'updated' | 'locked'
+    function markSynced(p, result) {
       return new Promise(resolve => {
         const tx = db.transaction("points", "readwrite");
         const store = tx.objectStore("points");
         store.get(p.id).onsuccess = ev => {
           const cur = ev.target.result;
-          if (cur) { cur.uid = p.uid; cur.syncedAt = new Date().toISOString(); store.put(cur); }
+          if (!cur) return;
+          cur.uid = p.uid;
+          if (!cur.syncedAt) cur.syncedAt = new Date().toISOString();
+          if (result === 'locked') { cur.editLocked = true; cur.updateRejected = true; }
+          else delete cur.updateRejected;
+          // clear the "changed" marks only if the point wasn't edited again while sending
+          if (cur.updatedAt === p.updatedAt) { cur.dirty = false; cur.imageDirty = false; }
+          store.put(cur);
         };
         tx.oncomplete = resolve; tx.onerror = resolve;
       });
@@ -484,25 +502,27 @@
       if (!navigator.onLine) { if (manual) alert('אין חיבור לאינטרנט. הנקודות יישלחו אוטומטית כשתחזור הקליטה.'); return; }
       syncing = true; lastSyncError = '';
       updateSyncStatus();
-      let sent = 0;
+      let sent = 0, rejected = 0;
       try {
         const pending = await getPending();
         for (const p of pending) {
           if (!p.uid) { p.uid = newUid(); await saveUid(p); }
           const res = await fetch(SYNC_URL, { method: 'POST', body: JSON.stringify(syncPayload(p)) });
           const out = await res.json();
+          if (out.locked) { await markSynced(p, 'locked'); rejected++; continue; }
           if (!out.ok) throw new Error(out.error || 'שגיאה בגיליון');
-          await markSynced(p);
+          await markSynced(p, out.updated ? 'updated' : 'sent');
           sent++;
         }
-        if (manual) alert(sent ? `נשלחו ${sent} נקודות לגיליון` : 'כל הנקודות כבר נשלחו');
+        if (rejected) alert(`${rejected} עריכות לא נקלטו בגיליון כי עברו שעתיים מהשליחה. הנקודות נעולות — תיקונים אצל מנהל הסקר.`);
+        else if (manual) alert(sent ? `נשלחו ${sent} נקודות לגיליון` : 'כל הנקודות כבר נשלחו');
       } catch (err) {
         lastSyncError = err.message || String(err);
         if (manual) alert('השליחה נכשלה: ' + lastSyncError + '\nננסה שוב אוטומטית.');
       } finally {
         syncing = false;
         updateSyncStatus();
-        if (sent) { renderList(); }
+        if (sent || rejected) { renderList(); }
       }
     }
 
@@ -516,7 +536,7 @@
       else if (pending) lines.push(`<span class="warn">⏳ ממתינות לשליחה: <b>${pending}</b></span>` + (navigator.onLine ? '' : ' (אין קליטה — יישלחו אוטומטית כשתחזור)'));
       else lines.push('<span class="ok">✔ כל הנקודות נשלחו לגיליון</span>');
       if (lastSyncError && !syncing) lines.push(`<span class="warn">השליחה האחרונה נכשלה: ${escapeHtml(lastSyncError)}</span>`);
-      lines.push('נקודה שנשלחה ננעלת לעריכה. תיקונים — רק בגיליון, אצל מנהל הסקר.');
+      lines.push('אפשר לערוך נקודה במשך שעתיים מרגע שליחתה. אחר כך היא ננעלת, ותיקונים — רק בגיליון, אצל מנהל הסקר.');
       box.innerHTML = lines.join('<br>');
     }
 
@@ -829,9 +849,15 @@
         // Keep the original sampling time; record the edit time separately
         store.get(parseInt(id)).onsuccess = function(ev) {
           const old = ev.target.result || {};
-          if (old.syncedAt) { blockedBecauseSent = true; tx.abort(); return; }
+          if (isLocked(old)) { blockedBecauseSent = true; tx.abort(); return; }
           pointData.id = parseInt(id);
           pointData.uid = old.uid || newUid();
+          if (old.syncedAt) {
+            // edit inside the 2-hour window: send it to the sheet again
+            pointData.syncedAt = old.syncedAt;
+            pointData.dirty = true;
+            pointData.imageDirty = !!old.imageDirty || (old.image || '') !== (pointData.image || '');
+          }
           if (old.createdAt) pointData.createdAt = old.createdAt;
           if (old.timestamp) pointData.timestamp = old.timestamp;
           if (!pointData.createdAt && !pointData.timestamp) pointData.createdAt = new Date().toISOString();
@@ -855,8 +881,9 @@
       };
       tx.onabort = function() {
         if (blockedBecauseSent) {
-          alert("הנקודה כבר נשלחה לגיליון ולכן נעולה לעריכה. תיקונים — אצל מנהל הסקר.");
+          alert(LOCKED_MSG);
           resetForm();
+          renderList();
         }
       };
       tx.onerror = function() {
@@ -897,7 +924,9 @@
             div.className = 'point-item';
             const altText = item.alt != null && item.alt !== '' ? ` (${escapeHtml(item.alt)}m)` : '';
             div.innerHTML = `
-              ${SYNC_URL ? (item.syncedAt ? '<span class="sync-badge sent">✓ נשלח</span><br>' : '<span class="sync-badge pending">⏳ ממתין לשליחה</span><br>') : ''}
+              ${SYNC_URL ? (!item.syncedAt ? '<span class="sync-badge pending">⏳ ממתין לשליחה</span><br>'
+                : item.dirty ? '<span class="sync-badge pending">⏳ עריכה ממתינה לשליחה</span><br>'
+                : '<span class="sync-badge sent">✓ נשלח</span><br>') : ''}
               <strong>${escapeHtml(item.name)}</strong> ${getFindTypes(item).map(t => `<span class="badge">${escapeHtml(t)}</span>`).join(' ')}
               <br><small>📅 ${escapeHtml(displayTime(item))} | 📍 ${num(item.lat, 5)}, ${num(item.lng, 5)}${altText}</small>
               ${item.surveyor ? `<br><small>👤 ${escapeHtml(item.surveyor)}</small>` : ''}
@@ -910,8 +939,14 @@
               ${item.landscape ? `<br><small>⛰️ נוף: ${escapeHtml(item.landscape)}</small>` : ''}
               ${item.notes ? `<p class="notes-text">${escapeHtml(item.notes)}</p>` : ''}
               ${item.image ? `<img src="${escapeHtml(item.image)}" alt="">` : ''}
-              ${item.syncedAt
+              ${item.updateRejected ? `<div class="locked-note" style="color:var(--brick);">⚠ העריכה האחרונה לא נקלטה בגיליון — עברו שעתיים מהשליחה</div>` : ''}
+              ${item.syncedAt && isLocked(item)
                 ? `<div class="locked-note">🔒 נשלח לגיליון ב-${escapeHtml(fmtDate(item.syncedAt))} — נעול לעריכה</div>`
+                : item.syncedAt
+                ? `<div class="locked-note">✏️ אפשר לערוך עד ${escapeHtml(fmtTime(editDeadline(item)))}</div>
+              <div class="point-actions">
+                <button class="btn-edit" onclick="editPoint(${Number(item.id)})">✏️ ערוך</button>
+              </div>`
                 : `<div class="point-actions">
                 <button class="btn-edit" onclick="editPoint(${Number(item.id)})">✏️ ערוך</button>
                 <button class="btn-danger" onclick="deletePoint(${Number(item.id)})">🗑️ מחק</button>
@@ -933,7 +968,7 @@
       store.get(id).onsuccess = function(e) {
         const p = e.target.result;
         if (!p) return;
-        if (p.syncedAt) return alert("הנקודה כבר נשלחה לגיליון ולכן נעולה לעריכה. תיקונים — אצל מנהל הסקר.");
+        if (isLocked(p)) { renderList(); return alert(LOCKED_MSG); }
         resetForm();
         document.getElementById('point-id').value = p.id;
         document.getElementById('point-name').value = p.name ?? '';
