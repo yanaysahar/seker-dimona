@@ -310,7 +310,7 @@
         <h3>שחזור / ייבוא גיבוי</h3>
         <p style="font-size: 0.85rem; color: var(--ink-soft); margin-bottom: 8px;">נקודות שכבר קיימות במכשיר לא ישוכפלו.</p>
         <input type="file" id="import-file" accept=".json" onchange="importJSONBackup(event)">
-        <p style="font-size: 0.75rem; color: var(--muted); text-align: center; margin-top: 20px;">גרסה 2.7 · 12.11.2026</p>
+        <p style="font-size: 0.75rem; color: var(--muted); text-align: center; margin-top: 20px;">גרסה 2.6 · 12.11.2026</p>
       </div>
     </div>
 
@@ -681,14 +681,7 @@
         if (navigator.storage && navigator.storage.estimate) {
           try {
             const est = await navigator.storage.estimate();
-            const mb = v => v >= 1073741824 ? (v / 1073741824).toFixed(1) + ' GB' : (v / 1048576).toFixed(1) + ' MB';
-            if (est.usage != null) lines.push(`נפח בשימוש: ${mb(est.usage)}`);
-            if (est.quota) {
-              const free = Math.max(0, est.quota - (est.usage || 0));
-              const pts = Math.floor(free / 300000); // ~0.3 MB per point with a photo
-              lines.push(`מקום פנוי לאפליקציה: ${mb(free)}` + (pts ? ` (בערך ${pts.toLocaleString('he-IL')} נקודות עם תמונה)` : ''));
-              if (free < 50 * 1048576) lines.push('<span class="warn">⚠ נשאר מעט מקום — שלחו את הנקודות כשיש קליטה ופנו מקום בטלפון</span>');
-            }
+            if (est.usage) lines.push(`נפח בשימוש: ${(est.usage / 1048576).toFixed(1)} MB`);
           } catch (e) {}
         }
         const last = getLastBackup();
