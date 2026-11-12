@@ -106,6 +106,10 @@
     .period-item { display: flex; align-items: center; gap: 10px; margin: 0; padding: 10px; font-weight: normal; font-size: 0.95rem; color: var(--ink); border-bottom: 1px solid #f1eadb; cursor: pointer; }
     .period-item input { width: 20px; height: 20px; margin: 0; flex: none; accent-color: var(--umber); }
     .period-item:has(input:checked) { background: #f6eedf; }
+    .sync-badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 0.75rem; font-weight: bold; margin-top: 4px; }
+    .sync-badge.sent { background: #e7ecd8; color: var(--olive); }
+    .sync-badge.pending { background: #f6e6cf; color: var(--ochre); }
+    .locked-note { font-size: 0.8rem; color: var(--muted); margin-top: 8px; }
     .hint { font-size: 0.8rem; color: var(--muted); font-weight: normal; }
     .status-box { font-size: 0.85rem; background: var(--sand); border-radius: 8px; padding: 10px; margin-bottom: 10px; line-height: 1.6; }
     .status-box .warn { color: var(--brick); font-weight: bold; }
@@ -277,7 +281,11 @@
     <!-- טאב 4: ייצוא וגיבוי -->
     <div id="tab-export" class="tab-content">
       <div class="card">
-        <h3>מצב הנתונים במכשיר</h3>
+        <h3>שליחה לגיליון המרכזי</h3>
+        <div id="sync-status" class="status-box">טוען...</div>
+        <button type="button" id="btn-sync" onclick="syncNow(true)">📤 שלח עכשיו</button>
+
+        <h3 style="margin-top:20px;">מצב הנתונים במכשיר</h3>
         <div id="storage-status" class="status-box">טוען...</div>
 
         <h3 style="margin-top:15px;">שיתוף האפליקציה</h3>
@@ -300,7 +308,7 @@
         <h3>שחזור / ייבוא גיבוי</h3>
         <p style="font-size: 0.85rem; color: var(--ink-soft); margin-bottom: 8px;">נקודות שכבר קיימות במכשיר לא ישוכפלו.</p>
         <input type="file" id="import-file" accept=".json" onchange="importJSONBackup(event)">
-        <p style="font-size: 0.75rem; color: var(--muted); text-align: center; margin-top: 20px;">גרסה 2.1 · 12.11.2026</p>
+        <p style="font-size: 0.75rem; color: var(--muted); text-align: center; margin-top: 20px;">גרסה 2.2 · 12.11.2026</p>
       </div>
     </div>
 
@@ -421,6 +429,101 @@
       updatePeriodSummary();
     }
 
+    // --- Sending points to the central Google Sheet ---
+    // Web-app address of the Apps Script in the survey's Google Sheet (see apps-script/Code.gs).
+    const SYNC_URL = '';
+    let syncing = false;
+    let lastSyncError = '';
+
+    function newUid() {
+      if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+      return 'p-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
+    }
+
+    function syncPayload(p) {
+      return {
+        uid: p.uid, name: p.name, findType: findTypeText(p), period: p.period || '',
+        preservation: preservationValue(p), aspect: p.aspect || '', density: p.density || '',
+        siteSize: siteSizeM2(p), landscape: p.landscape || '', notes: p.notes || '',
+        lat: p.lat, lng: p.lng, alt: p.alt, acc: p.acc, surveyor: p.surveyor || '',
+        createdAt: p.createdAt || '', timeText: displayTime(p), image: p.image || ''
+      };
+    }
+
+    function getPending() {
+      return new Promise(resolve => {
+        const req = db.transaction("points", "readonly").objectStore("points").getAll();
+        req.onsuccess = () => resolve(req.result.filter(p => !p.syncedAt));
+        req.onerror = () => resolve([]);
+      });
+    }
+
+    function markSynced(p) {
+      return new Promise(resolve => {
+        const tx = db.transaction("points", "readwrite");
+        const store = tx.objectStore("points");
+        store.get(p.id).onsuccess = ev => {
+          const cur = ev.target.result;
+          if (cur) { cur.uid = p.uid; cur.syncedAt = new Date().toISOString(); store.put(cur); }
+        };
+        tx.oncomplete = resolve; tx.onerror = resolve;
+      });
+    }
+
+    function saveUid(p) {
+      return new Promise(resolve => {
+        const tx = db.transaction("points", "readwrite");
+        tx.objectStore("points").put(p);
+        tx.oncomplete = resolve; tx.onerror = resolve;
+      });
+    }
+
+    async function syncNow(manual) {
+      if (!db || syncing) return;
+      if (!SYNC_URL) { if (manual) alert('השליחה לגיליון עוד לא הוגדרה.'); return; }
+      if (!navigator.onLine) { if (manual) alert('אין חיבור לאינטרנט. הנקודות יישלחו אוטומטית כשתחזור הקליטה.'); return; }
+      syncing = true; lastSyncError = '';
+      updateSyncStatus();
+      let sent = 0;
+      try {
+        const pending = await getPending();
+        for (const p of pending) {
+          if (!p.uid) { p.uid = newUid(); await saveUid(p); }
+          const res = await fetch(SYNC_URL, { method: 'POST', body: JSON.stringify(syncPayload(p)) });
+          const out = await res.json();
+          if (!out.ok) throw new Error(out.error || 'שגיאה בגיליון');
+          await markSynced(p);
+          sent++;
+        }
+        if (manual) alert(sent ? `נשלחו ${sent} נקודות לגיליון` : 'כל הנקודות כבר נשלחו');
+      } catch (err) {
+        lastSyncError = err.message || String(err);
+        if (manual) alert('השליחה נכשלה: ' + lastSyncError + '\nננסה שוב אוטומטית.');
+      } finally {
+        syncing = false;
+        updateSyncStatus();
+        if (sent) { renderList(); }
+      }
+    }
+
+    async function updateSyncStatus() {
+      const box = document.getElementById('sync-status');
+      if (!box || !db) return;
+      if (!SYNC_URL) { box.innerHTML = '<span class="warn">השליחה לגיליון עוד לא הוגדרה.</span>'; return; }
+      const pending = (await getPending()).length;
+      const lines = [];
+      if (syncing) lines.push('⏳ שולח...');
+      else if (pending) lines.push(`<span class="warn">⏳ ממתינות לשליחה: <b>${pending}</b></span>` + (navigator.onLine ? '' : ' (אין קליטה — יישלחו אוטומטית כשתחזור)'));
+      else lines.push('<span class="ok">✔ כל הנקודות נשלחו לגיליון</span>');
+      if (lastSyncError && !syncing) lines.push(`<span class="warn">השליחה האחרונה נכשלה: ${escapeHtml(lastSyncError)}</span>`);
+      lines.push('נקודה שנשלחה ננעלת לעריכה. תיקונים — רק בגיליון, אצל מנהל הסקר.');
+      box.innerHTML = lines.join('<br>');
+    }
+
+    window.addEventListener('online', () => syncNow(false));
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') syncNow(false); });
+    setInterval(() => syncNow(false), 120000);
+
     // --- Surveyor name (required before adding data) ---
     let surveyorName = '';
     try { surveyorName = localStorage.getItem('surveyorName') || ''; } catch (e) {}
@@ -464,7 +567,7 @@
     });
     function withDb(fn) { dbReady.then(fn); }
 
-    withDb(() => { renderList(); updateStorageStatus(); });
+    withDb(() => { renderList(); updateStorageStatus(); updateSyncStatus(); syncNow(false); });
 
     let currentImageData = "";
     let mapInstance = null;
@@ -608,7 +711,7 @@
 
       if (tabId === 'tab-list') withDb(renderList);
       if (tabId === 'tab-map') withDb(initMap);
-      if (tabId === 'tab-export') withDb(updateStorageStatus);
+      if (tabId === 'tab-export') withDb(() => { updateStorageStatus(); updateSyncStatus(); });
     }
 
     // --- GPS Handler ---
@@ -721,11 +824,14 @@
       const tx = db.transaction("points", "readwrite");
       const store = tx.objectStore("points");
 
+      let blockedBecauseSent = false;
       if (id) {
         // Keep the original sampling time; record the edit time separately
         store.get(parseInt(id)).onsuccess = function(ev) {
           const old = ev.target.result || {};
+          if (old.syncedAt) { blockedBecauseSent = true; tx.abort(); return; }
           pointData.id = parseInt(id);
+          pointData.uid = old.uid || newUid();
           if (old.createdAt) pointData.createdAt = old.createdAt;
           if (old.timestamp) pointData.timestamp = old.timestamp;
           if (!pointData.createdAt && !pointData.timestamp) pointData.createdAt = new Date().toISOString();
@@ -737,6 +843,7 @@
       } else {
         pointData.createdAt = new Date().toISOString();
         pointData.surveyor = surveyorName;
+        pointData.uid = newUid();
         store.add(pointData);
       }
 
@@ -744,8 +851,16 @@
         alert(id ? "הנקודה עודכנה בהצלחה!" : "הנקודה נשמרה בהצלחה!");
         resetForm();
         updateStorageStatus();
+        syncNow(false);
+      };
+      tx.onabort = function() {
+        if (blockedBecauseSent) {
+          alert("הנקודה כבר נשלחה לגיליון ולכן נעולה לעריכה. תיקונים — אצל מנהל הסקר.");
+          resetForm();
+        }
       };
       tx.onerror = function() {
+        if (blockedBecauseSent) return;
         alert("שגיאה בשמירה: " + (tx.error ? tx.error.message : "") + "\nייתכן שהאחסון במכשיר מלא.");
       };
     });
@@ -782,6 +897,7 @@
             div.className = 'point-item';
             const altText = item.alt != null && item.alt !== '' ? ` (${escapeHtml(item.alt)}m)` : '';
             div.innerHTML = `
+              ${SYNC_URL ? (item.syncedAt ? '<span class="sync-badge sent">✓ נשלח</span><br>' : '<span class="sync-badge pending">⏳ ממתין לשליחה</span><br>') : ''}
               <strong>${escapeHtml(item.name)}</strong> ${getFindTypes(item).map(t => `<span class="badge">${escapeHtml(t)}</span>`).join(' ')}
               <br><small>📅 ${escapeHtml(displayTime(item))} | 📍 ${num(item.lat, 5)}, ${num(item.lng, 5)}${altText}</small>
               ${item.surveyor ? `<br><small>👤 ${escapeHtml(item.surveyor)}</small>` : ''}
@@ -794,10 +910,12 @@
               ${item.landscape ? `<br><small>⛰️ נוף: ${escapeHtml(item.landscape)}</small>` : ''}
               ${item.notes ? `<p class="notes-text">${escapeHtml(item.notes)}</p>` : ''}
               ${item.image ? `<img src="${escapeHtml(item.image)}" alt="">` : ''}
-              <div class="point-actions">
+              ${item.syncedAt
+                ? `<div class="locked-note">🔒 נשלח לגיליון ב-${escapeHtml(fmtDate(item.syncedAt))} — נעול לעריכה</div>`
+                : `<div class="point-actions">
                 <button class="btn-edit" onclick="editPoint(${Number(item.id)})">✏️ ערוך</button>
                 <button class="btn-danger" onclick="deletePoint(${Number(item.id)})">🗑️ מחק</button>
-              </div>
+              </div>`}
             `;
             container.appendChild(div);
           }
@@ -815,6 +933,7 @@
       store.get(id).onsuccess = function(e) {
         const p = e.target.result;
         if (!p) return;
+        if (p.syncedAt) return alert("הנקודה כבר נשלחה לגיליון ולכן נעולה לעריכה. תיקונים — אצל מנהל הסקר.");
         resetForm();
         document.getElementById('point-id').value = p.id;
         document.getElementById('point-name').value = p.name ?? '';
@@ -846,11 +965,15 @@
     }
 
     function deletePoint(id) {
-      if (confirm("האם אתה בטוח שברצונך למחוק נקודה זו?")) {
+      db.transaction("points", "readonly").objectStore("points").get(id).onsuccess = function(e) {
+        const p = e.target.result;
+        if (!p) return;
+        if (p.syncedAt) return alert("הנקודה כבר נשלחה לגיליון ולכן נעולה. מחיקה — אצל מנהל הסקר.");
+        if (!confirm("האם אתה בטוח שברצונך למחוק נקודה זו?")) return;
         const tx = db.transaction("points", "readwrite");
         tx.objectStore("points").delete(id);
-        tx.oncomplete = function() { renderList(); updateStorageStatus(); };
-      }
+        tx.oncomplete = function() { renderList(); updateStorageStatus(); updateSyncStatus(); };
+      };
     }
 
     // --- Map Implementation ---
