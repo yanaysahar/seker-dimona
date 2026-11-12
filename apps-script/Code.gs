@@ -1,10 +1,9 @@
 /**
  * סקר דימונה — קליטת נקודות סקר לגיליון Google Sheets
  *
- * האפליקציה שולחת לכאן כל נקודה. סוקר יכול לעדכן נקודה ששלח רק במשך
- * שעתיים מרגע שהיא התקבלה בגיליון (לפי השעון של הגיליון). אחרי זה השורה
- * נעולה לאפליקציה — עריכה ומחיקה רק בגיליון, על ידי בעל הגיליון.
- * הסקריפט אף פעם לא מוחק שורות.
+ * האפליקציה שולחת לכאן כל נקודה. סוקר יכול לעדכן או למחוק נקודה ששלח רק
+ * במשך שעתיים מרגע שהיא התקבלה בגיליון (לפי השעון של הגיליון). אחרי זה
+ * השורה נעולה לאפליקציה — עריכה ומחיקה רק בגיליון, על ידי בעל הגיליון.
  *
  * התקנה: Extensions → Apps Script, להדביק את הקובץ הזה, לשמור,
  * ואז Deploy → New deployment → Web app
@@ -37,17 +36,23 @@ function doPost(e) {
       : null;
 
     if (!found) {
+      if (p.delete) return json_({ ok: true, deleted: true }); // not in the sheet (already removed)
       sheet.appendRow(rowValues_(p, savePhoto_(p), new Date(), ''));
       return json_({ ok: true });
     }
 
     // Point already in the sheet
-    if (!p.update) return json_({ ok: true, duplicate: true });
+    if (!p.update && !p.delete) return json_({ ok: true, duplicate: true });
     const rowNum = found.getRow();
     const received = sheet.getRange(rowNum, COL_RECEIVED).getValue();
     const age = received instanceof Date ? Date.now() - received.getTime() : Infinity;
     if (age > EDIT_WINDOW_HOURS * 3600 * 1000) {
       return json_({ ok: false, locked: true, error: 'עברו ' + EDIT_WINDOW_HOURS + ' שעות מהשליחה — הנקודה נעולה' });
+    }
+    if (p.delete) {
+      trashPhoto_(sheet.getRange(rowNum, COL_PHOTO).getValue());
+      sheet.deleteRow(rowNum);
+      return json_({ ok: true, deleted: true });
     }
     let photo = sheet.getRange(rowNum, COL_PHOTO).getValue();
     if (p.removeImage || p.image) { trashPhoto_(photo); photo = ''; }

@@ -310,7 +310,7 @@
         <h3>שחזור / ייבוא גיבוי</h3>
         <p style="font-size: 0.85rem; color: var(--ink-soft); margin-bottom: 8px;">נקודות שכבר קיימות במכשיר לא ישוכפלו.</p>
         <input type="file" id="import-file" accept=".json" onchange="importJSONBackup(event)">
-        <p style="font-size: 0.75rem; color: var(--muted); text-align: center; margin-top: 20px;">גרסה 2.5 · 12.11.2026</p>
+        <p style="font-size: 0.75rem; color: var(--muted); text-align: center; margin-top: 20px;">גרסה 2.6 · 12.11.2026</p>
       </div>
     </div>
 
@@ -471,7 +471,7 @@
     function getPending() {
       return new Promise(resolve => {
         const req = db.transaction("points", "readonly").objectStore("points").getAll();
-        req.onsuccess = () => resolve(req.result.filter(p => !p.syncedAt || p.dirty));
+        req.onsuccess = () => resolve(req.result.filter(p => !p.syncedAt || p.dirty || p.pendingDelete));
         req.onerror = () => resolve([]);
       });
     }
@@ -496,6 +496,30 @@
       });
     }
 
+    function deleteLocal(id) {
+      return new Promise(resolve => {
+        const tx = db.transaction("points", "readwrite");
+        tx.objectStore("points").delete(id);
+        tx.oncomplete = resolve; tx.onerror = resolve;
+      });
+    }
+
+    // the sheet refused a deletion (2 hours passed): keep the point, locked
+    function deleteRefused(p) {
+      return new Promise(resolve => {
+        const tx = db.transaction("points", "readwrite");
+        const store = tx.objectStore("points");
+        store.get(p.id).onsuccess = ev => {
+          const cur = ev.target.result;
+          if (!cur) return;
+          delete cur.pendingDelete;
+          cur.editLocked = true; cur.deleteRejected = true;
+          store.put(cur);
+        };
+        tx.oncomplete = resolve; tx.onerror = resolve;
+      });
+    }
+
     function saveUid(p) {
       return new Promise(resolve => {
         const tx = db.transaction("points", "readwrite");
@@ -510,10 +534,19 @@
       if (!navigator.onLine) { if (manual) alert('אין חיבור לאינטרנט. הנקודות יישלחו אוטומטית כשתחזור הקליטה.'); return; }
       syncing = true; lastSyncError = '';
       updateSyncStatus();
-      let sent = 0, rejected = 0;
+      let sent = 0, rejected = 0, deleted = 0, delRejected = 0;
       try {
         const pending = await getPending();
         for (const p of pending) {
+          if (p.pendingDelete) {
+            const res = await fetch(SYNC_URL, { method: 'POST', body: JSON.stringify({ uid: p.uid, name: p.name, delete: true }) });
+            const out = await res.json();
+            if (out.locked) { await deleteRefused(p); delRejected++; continue; }
+            if (!out.ok || !out.deleted) throw new Error(out.error || 'הגיליון לא מחק את הנקודה — ייתכן שצריך לעדכן את הקוד בגיליון');
+            await deleteLocal(p.id);
+            deleted++;
+            continue;
+          }
           if (!p.uid) { p.uid = newUid(); await saveUid(p); }
           const res = await fetch(SYNC_URL, { method: 'POST', body: JSON.stringify(syncPayload(p)) });
           const out = await res.json();
@@ -523,14 +556,15 @@
           sent++;
         }
         if (rejected) alert(`${rejected} עריכות לא נקלטו בגיליון כי עברו שעתיים מהשליחה. הנקודות נעולות — תיקונים אצל מנהל הסקר.`);
-        else if (manual) alert(sent ? `נשלחו ${sent} נקודות לגיליון` : 'כל הנקודות כבר נשלחו');
+        if (delRejected) alert(`${delRejected} מחיקות לא בוצעו כי עברו שעתיים מהשליחה. הנקודות נשארו בגיליון — מחיקה אצל מנהל הסקר.`);
+        if (manual && !rejected && !delRejected) alert(sent || deleted ? `נשלחו ${sent} נקודות` + (deleted ? `, נמחקו ${deleted}` : '') : 'כל הנקודות כבר נשלחו');
       } catch (err) {
         lastSyncError = err.message || String(err);
         if (manual) alert('השליחה נכשלה: ' + lastSyncError + '\nננסה שוב אוטומטית.');
       } finally {
         syncing = false;
         updateSyncStatus();
-        if (sent || rejected) { renderList(); }
+        if (sent || rejected || deleted || delRejected) { renderList(); updateStorageStatus(); }
       }
     }
 
@@ -544,7 +578,7 @@
       else if (pending) lines.push(`<span class="warn">⏳ ממתינות לשליחה: <b>${pending}</b></span>` + (navigator.onLine ? '' : ' (אין קליטה — יישלחו אוטומטית כשתחזור)'));
       else lines.push('<span class="ok">✔ כל הנקודות נשלחו לגיליון</span>');
       if (lastSyncError && !syncing) lines.push(`<span class="warn">השליחה האחרונה נכשלה: ${escapeHtml(lastSyncError)}</span>`);
-      lines.push('אפשר לערוך נקודה במשך שעתיים מרגע שליחתה. אחר כך היא ננעלת, ותיקונים — רק בגיליון, אצל מנהל הסקר.');
+      lines.push('אפשר לערוך או למחוק נקודה במשך שעתיים מרגע שליחתה. אחר כך היא ננעלת, ותיקונים — רק בגיליון, אצל מנהל הסקר.');
       box.innerHTML = lines.join('<br>');
     }
 
@@ -940,6 +974,7 @@
             const altText = item.alt != null && item.alt !== '' ? ` (${escapeHtml(item.alt)}m)` : '';
             div.innerHTML = `
               ${SYNC_URL ? (!item.syncedAt ? '<span class="sync-badge pending">⏳ ממתין לשליחה</span><br>'
+                : item.pendingDelete ? '<span class="sync-badge pending">🗑️ מחיקה ממתינה לשליחה</span><br>'
                 : item.dirty ? '<span class="sync-badge pending">⏳ עריכה ממתינה לשליחה</span><br>'
                 : '<span class="sync-badge sent">✓ נשלח</span><br>') : ''}
               <strong>${escapeHtml(item.name)}</strong> ${getFindTypes(item).map(t => `<span class="badge">${escapeHtml(t)}</span>`).join(' ')}
@@ -955,12 +990,19 @@
               ${item.notes ? `<p class="notes-text">${escapeHtml(item.notes)}</p>` : ''}
               ${item.image ? `<img src="${escapeHtml(item.image)}" alt="">` : ''}
               ${item.updateRejected ? `<div class="locked-note" style="color:var(--brick);">⚠ העריכה האחרונה לא נקלטה בגיליון — עברו שעתיים מהשליחה</div>` : ''}
-              ${item.syncedAt && isLocked(item)
-                ? `<div class="locked-note">🔒 נשלח לגיליון ב-${escapeHtml(fmtDate(item.syncedAt))} — נעול לעריכה</div>`
+              ${item.deleteRejected ? `<div class="locked-note" style="color:var(--brick);">⚠ המחיקה לא בוצעה — עברו שעתיים מהשליחה</div>` : ''}
+              ${item.pendingDelete
+                ? `<div class="locked-note">הנקודה תימחק מהגיליון ומהמכשיר ברגע שתהיה קליטה.</div>
+              <div class="point-actions">
+                <button class="btn-cancel" onclick="undoDelete(${Number(item.id)})">↩️ בטל מחיקה</button>
+              </div>`
+                : item.syncedAt && isLocked(item)
+                ? `<div class="locked-note">🔒 נשלח לגיליון ב-${escapeHtml(fmtDate(item.syncedAt))} — נעול לעריכה ולמחיקה</div>`
                 : item.syncedAt
-                ? `<div class="locked-note">✏️ אפשר לערוך עד ${escapeHtml(fmtTime(editDeadline(item)))}</div>
+                ? `<div class="locked-note">✏️ אפשר לערוך או למחוק עד ${escapeHtml(fmtTime(editDeadline(item)))}</div>
               <div class="point-actions">
                 <button class="btn-edit" onclick="editPoint(${Number(item.id)})">✏️ ערוך</button>
+                <button class="btn-danger" onclick="deletePoint(${Number(item.id)})">🗑️ מחק</button>
               </div>`
                 : `<div class="point-actions">
                 <button class="btn-edit" onclick="editPoint(${Number(item.id)})">✏️ ערוך</button>
@@ -984,6 +1026,7 @@
         const p = e.target.result;
         if (!p) return;
         if (isLocked(p)) { renderList(); return alert(LOCKED_MSG); }
+        if (p.pendingDelete) return alert("הנקודה מסומנת למחיקה. כדי לערוך אותה, בטל קודם את המחיקה.");
         resetForm();
         document.getElementById('point-id').value = p.id;
         document.getElementById('point-name').value = p.name ?? '';
@@ -1018,12 +1061,28 @@
       db.transaction("points", "readonly").objectStore("points").get(id).onsuccess = function(e) {
         const p = e.target.result;
         if (!p) return;
-        if (p.syncedAt) return alert("הנקודה כבר נשלחה לגיליון ולכן נעולה. מחיקה — אצל מנהל הסקר.");
-        if (!confirm("האם אתה בטוח שברצונך למחוק נקודה זו?")) return;
+        if (isLocked(p)) { renderList(); return alert("עברו שעתיים מאז שהנקודה נשלחה לגיליון, ולכן היא נעולה. מחיקה — אצל מנהל הסקר."); }
+        if (!p.syncedAt) {
+          if (!confirm("האם אתה בטוח שברצונך למחוק נקודה זו?")) return;
+          const tx = db.transaction("points", "readwrite");
+          tx.objectStore("points").delete(id);
+          tx.oncomplete = function() { renderList(); updateStorageStatus(); updateSyncStatus(); };
+          return;
+        }
+        // already in the sheet: mark it, and the deletion is sent (now, or when there is reception)
+        if (!confirm("הנקודה כבר נשלחה לגיליון. למחוק אותה גם מהגיליון וגם מהמכשיר?")) return;
         const tx = db.transaction("points", "readwrite");
-        tx.objectStore("points").delete(id);
-        tx.oncomplete = function() { renderList(); updateStorageStatus(); updateSyncStatus(); };
+        p.pendingDelete = true;
+        tx.objectStore("points").put(p);
+        tx.oncomplete = function() { renderList(); updateSyncStatus(); syncNow(false); };
       };
+    }
+
+    function undoDelete(id) {
+      const tx = db.transaction("points", "readwrite");
+      const store = tx.objectStore("points");
+      store.get(id).onsuccess = e => { const p = e.target.result; if (p) { delete p.pendingDelete; store.put(p); } };
+      tx.oncomplete = function() { renderList(); updateSyncStatus(); };
     }
 
     // --- Map Implementation ---
