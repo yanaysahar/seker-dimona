@@ -76,6 +76,10 @@
     .chip input:checked + span { background: #2980b9; border-color: #2980b9; color: #fff; }
     .chip input:checked + span::before { content: "✓ "; }
     .chip input:focus-visible + span { outline: 2px solid #2c3e50; outline-offset: 2px; }
+    .chips.scale .chip span { min-width: 48px; text-align: center; font-weight: bold; }
+    .compass { direction: ltr; display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 6px; max-width: 360px; }
+    .compass .chip span { display: block; text-align: center; padding: 10px 2px; font-size: 0.85rem; border-radius: 10px; }
+    .compass-center { display: flex; align-items: center; justify-content: center; font-size: 1.6rem; }
     .hint { font-size: 0.8rem; color: #888; font-weight: normal; }
     .status-box { font-size: 0.85rem; background: #f8f9fa; border-radius: 8px; padding: 10px; margin-bottom: 10px; line-height: 1.6; }
     .status-box .warn { color: #c0392b; font-weight: bold; }
@@ -189,11 +193,26 @@
           <label>תקופה משוערת</label>
           <input type="text" id="period" placeholder="לדוגמה: ברזל ב', ביזנטי, רומי">
 
-          <label>מצב השתמרות</label>
-          <div class="chips" id="preservation">
-            <label class="chip"><input type="radio" name="preservation" value="טוב מאוד"><span>טוב מאוד</span></label>
-            <label class="chip"><input type="radio" name="preservation" value="בינוני"><span>בינוני</span></label>
-            <label class="chip"><input type="radio" name="preservation" value="הרוס/גרוע"><span>הרוס / גרוע</span></label>
+          <label>מצב השתמרות <span class="hint">(1 = הרוס, 5 = שמור מאוד)</span></label>
+          <div class="chips scale" id="preservation">
+            <label class="chip"><input type="radio" name="preservation" value="1"><span>1</span></label>
+            <label class="chip"><input type="radio" name="preservation" value="2"><span>2</span></label>
+            <label class="chip"><input type="radio" name="preservation" value="3"><span>3</span></label>
+            <label class="chip"><input type="radio" name="preservation" value="4"><span>4</span></label>
+            <label class="chip"><input type="radio" name="preservation" value="5"><span>5</span></label>
+          </div>
+
+          <label>מפנה</label>
+          <div class="compass" id="aspect">
+            <label class="chip"><input type="radio" name="aspect" value="צפון-מערב"><span>צפון-מערב</span></label>
+            <label class="chip"><input type="radio" name="aspect" value="צפון"><span>צפון</span></label>
+            <label class="chip"><input type="radio" name="aspect" value="צפון-מזרח"><span>צפון-מזרח</span></label>
+            <label class="chip"><input type="radio" name="aspect" value="מערב"><span>מערב</span></label>
+            <div class="compass-center" aria-hidden="true">🧭</div>
+            <label class="chip"><input type="radio" name="aspect" value="מזרח"><span>מזרח</span></label>
+            <label class="chip"><input type="radio" name="aspect" value="דרום-מערב"><span>דרום-מערב</span></label>
+            <label class="chip"><input type="radio" name="aspect" value="דרום"><span>דרום</span></label>
+            <label class="chip"><input type="radio" name="aspect" value="דרום-מזרח"><span>דרום-מזרח</span></label>
           </div>
 
           <label>תיאור נוף</label>
@@ -251,7 +270,7 @@
         <h3>שחזור / ייבוא גיבוי</h3>
         <p style="font-size: 0.85rem; color: #666; margin-bottom: 8px;">נקודות שכבר קיימות במכשיר לא ישוכפלו.</p>
         <input type="file" id="import-file" accept=".json" onchange="importJSONBackup(event)">
-        <p style="font-size: 0.75rem; color: #aaa; text-align: center; margin-top: 20px;">גרסה 1.3 · 12.11.2026</p>
+        <p style="font-size: 0.75rem; color: #aaa; text-align: center; margin-top: 20px;">גרסה 1.4 · 12.11.2026</p>
       </div>
     </div>
 
@@ -304,15 +323,19 @@
     }
     function siteSizeText(p) { const v = siteSizeM2(p); return v == null ? '' : `${v} מ״ר`; }
 
-    // Preservation: single choice, tap the selected option again to clear it
-    function getPreservation() {
-      const el = document.querySelector('#preservation input:checked');
+    // Single-choice button groups (preservation, aspect): tap the selected option again to clear it
+    function getChoice(groupId) {
+      const el = document.querySelector('#' + groupId + ' input:checked');
       return el ? el.value : '';
     }
-    function setPreservation(v) {
-      document.querySelectorAll('#preservation input').forEach(r => { r.checked = r.value === v; });
+    function setChoice(groupId, v) {
+      document.querySelectorAll('#' + groupId + ' input').forEach(r => { r.checked = r.value === String(v ?? ''); });
     }
-    document.querySelectorAll('#preservation input').forEach(r => {
+    // Older points used words for preservation; map them onto the 1–5 scale
+    const OLD_PRESERVATION = { 'טוב מאוד': '5', 'בינוני': '3', 'הרוס/גרוע': '1' };
+    function preservationValue(p) { return OLD_PRESERVATION[p.preservation] || (p.preservation ?? ''); }
+    const ASPECT_CODES = { 'צפון': 'N', 'צפון-מזרח': 'NE', 'מזרח': 'E', 'דרום-מזרח': 'SE', 'דרום': 'S', 'דרום-מערב': 'SW', 'מערב': 'W', 'צפון-מערב': 'NW' };
+    document.querySelectorAll('#preservation input, #aspect input').forEach(r => {
       r.closest('label').addEventListener('pointerdown', () => { r.dataset.wasChecked = r.checked ? '1' : ''; });
       r.addEventListener('click', () => { if (r.dataset.wasChecked) { r.checked = false; r.dataset.wasChecked = ''; } });
     });
@@ -609,7 +632,8 @@
         alt: altVal === '' ? null : parseFloat(altVal),
         acc: parseFloat(document.getElementById('acc').value) || 0,
         period: document.getElementById('period').value.trim(),
-        preservation: getPreservation(),
+        preservation: getChoice('preservation'),
+        aspect: getChoice('aspect'),
         notes: document.getElementById('notes').value,
         image: currentImageData
       };
@@ -672,7 +696,7 @@
         const cursor = e.target.result;
         if (cursor) {
           const item = cursor.value;
-          const haystack = [item.name, item.notes, item.period, findTypeText(item), item.surveyor, item.landscape, item.density].map(v => String(v ?? '').toLowerCase());
+          const haystack = [item.name, item.notes, item.period, findTypeText(item), item.surveyor, item.landscape, item.density, item.aspect].map(v => String(v ?? '').toLowerCase());
           if (!search || haystack.some(v => v.includes(search))) {
             const div = document.createElement('div');
             div.className = 'point-item';
@@ -683,7 +707,8 @@
               ${item.surveyor ? `<br><small>👤 ${escapeHtml(item.surveyor)}</small>` : ''}
               ${item.updatedAt ? `<br><small>✏️ עודכן: ${escapeHtml(fmtDate(item.updatedAt))}${item.updatedBy ? ' ע״י ' + escapeHtml(item.updatedBy) : ''}</small>` : ''}
               ${item.period ? `<br><small>⏳ תקופה: ${escapeHtml(item.period)}</small>` : ''}
-              ${item.preservation ? `<br><small>🏛️ השתמרות: ${escapeHtml(item.preservation)}</small>` : ''}
+              ${item.preservation ? `<br><small>🏛️ השתמרות: ${escapeHtml(preservationValue(item))}/5</small>` : ''}
+              ${item.aspect ? `<br><small>🧭 מפנה: ${escapeHtml(item.aspect)}</small>` : ''}
               ${item.density ? `<br><small>🔸 צפיפות: ${escapeHtml(item.density)}</small>` : ''}
               ${siteSizeText(item) ? `<br><small>📐 גודל אתר: ${escapeHtml(siteSizeText(item))}</small>` : ''}
               ${item.landscape ? `<br><small>⛰️ נוף: ${escapeHtml(item.landscape)}</small>` : ''}
@@ -722,7 +747,8 @@
         document.getElementById('alt').value = p.alt ?? '';
         document.getElementById('acc').value = p.acc ?? '';
         document.getElementById('period').value = p.period ?? '';
-        setPreservation(p.preservation || '');
+        setChoice('preservation', preservationValue(p));
+        setChoice('aspect', p.aspect || '');
         document.getElementById('notes').value = p.notes ?? '';
 
         if (p.image) {
@@ -825,11 +851,11 @@
     function exportCSV() {
       getAllPoints(points => {
         if (!points.length) return alert("אין נתונים לייצוא");
-        const header = ["ID", "שם", "סוג ממצא", "קו רוחב", "קו אורך", "גובה", "דיוק", "תקופה", "מצב השתמרות", "צפיפות ממצא", "גודל אתר (מ״ר)", "תיאור נוף", "הערות", "סוקר/ת", "זמן דגימה", "זמן דגימה (ISO)", "עודכן (ISO)", "עודכן ע״י", "יש תמונה"];
+        const header = ["ID", "שם", "סוג ממצא", "קו רוחב", "קו אורך", "גובה", "דיוק", "תקופה", "מצב השתמרות (1-5)", "מפנה", "צפיפות ממצא", "גודל אתר (מ״ר)", "תיאור נוף", "הערות", "סוקר/ת", "זמן דגימה", "זמן דגימה (ISO)", "עודכן (ISO)", "עודכן ע״י", "יש תמונה"];
         let csv = "﻿" + header.map(csvField).join(",") + "\r\n"; // UTF-8 BOM for Excel
 
         points.forEach(p => {
-          csv += [p.id, p.name, findTypeText(p), p.lat, p.lng, p.alt ?? '', p.acc, p.period, p.preservation,
+          csv += [p.id, p.name, findTypeText(p), p.lat, p.lng, p.alt ?? '', p.acc, p.period, preservationValue(p), p.aspect || '',
                   p.density || '', siteSizeM2(p) ?? '', p.landscape || '', p.notes, p.surveyor || '',
                   displayTime(p), p.createdAt || '', p.updatedAt || '', p.updatedBy || '', p.image ? 'כן' : 'לא']
                  .map(csvField).join(",") + "\r\n";
@@ -860,7 +886,9 @@
               siteSize_m2: siteSizeM2(p),
               landscape: p.landscape || null,
               period: p.period,
-              preservation: p.preservation,
+              preservation: preservationValue(p) === '' ? null : Number(preservationValue(p)),
+              aspect: p.aspect || null,
+              aspect_code: ASPECT_CODES[p.aspect] || null,
               notes: p.notes,
               surveyor: p.surveyor || null,
               updatedBy: p.updatedBy || null,
@@ -891,7 +919,8 @@
         גודל אתר: ${escapeHtml(siteSizeText(p))}<br>
         נוף: ${escapeHtml(p.landscape)}<br>
         תקופה: ${escapeHtml(p.period)}<br>
-        השתמרות: ${escapeHtml(p.preservation)}<br>
+        השתמרות (1-5): ${escapeHtml(preservationValue(p))}<br>
+        מפנה: ${escapeHtml(p.aspect)}<br>
         סוקר/ת: ${escapeHtml(p.surveyor)}<br>
         הערות: ${escapeHtml(p.notes).replace(/\n/g, '<br>')}<br>
         זמן: ${escapeHtml(displayTime(p))}`;
