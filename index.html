@@ -151,12 +151,13 @@
         <form id="survey-form">
           <input type="hidden" id="point-id">
           
-          <label>מזהה / שם הנקודה *</label>
-          <input type="text" id="point-name" placeholder="לדוגמה: לוקוס 101 / קיר אבני גזית" required>
+          <label>מספר נקודה *</label>
+          <input type="text" id="point-name" placeholder="לדוגמה: A1" required>
           
           <label>סוג הממצא <span class="hint">(אפשר לבחור כמה)</span></label>
           <div class="chips" id="find-types">
             <label class="chip"><input type="checkbox" value="חרסים"><span>חרסים / קרמיקה</span></label>
+            <label class="chip"><input type="checkbox" value="כלי צור"><span>כלי צור</span></label>
             <label class="chip"><input type="checkbox" value="מבנה/קיר"><span>מבנה / קיר</span></label>
             <label class="chip"><input type="checkbox" value="מתקן חקלאי"><span>מתקן חקלאי (גת, בית בד וכד')</span></label>
             <label class="chip"><input type="checkbox" value="מערה/בור"><span>מערה / בור מים</span></label>
@@ -249,7 +250,7 @@
     <div id="tab-list" class="tab-content">
       <div class="card">
         <h3>רשימת נקודות שנאספו</h3>
-        <input type="text" id="search-input" placeholder="🔍 חפש לפי שם, תיאור, תקופה או סוקר..." oninput="renderList()">
+        <input type="text" id="search-input" placeholder="🔍 חפש לפי מספר נקודה, תיאור, תקופה או סוקר..." oninput="renderList()">
         <div id="points-container" style="margin-top: 15px;"></div>
       </div>
     </div>
@@ -288,7 +289,7 @@
         <h3>שחזור / ייבוא גיבוי</h3>
         <p style="font-size: 0.85rem; color: var(--ink-soft); margin-bottom: 8px;">נקודות שכבר קיימות במכשיר לא ישוכפלו.</p>
         <input type="file" id="import-file" accept=".json" onchange="importJSONBackup(event)">
-        <p style="font-size: 0.75rem; color: var(--muted); text-align: center; margin-top: 20px;">גרסה 1.9 · 12.11.2026</p>
+        <p style="font-size: 0.75rem; color: var(--muted); text-align: center; margin-top: 20px;">גרסה 2.0 · 12.11.2026</p>
       </div>
     </div>
 
@@ -869,7 +870,7 @@
     function exportCSV() {
       getAllPoints(points => {
         if (!points.length) return alert("אין נתונים לייצוא");
-        const header = ["ID", "שם", "סוג ממצא", "קו רוחב", "קו אורך", "גובה", "דיוק", "תקופה", "מצב השתמרות (1-5)", "מפנה", "צפיפות ממצא", "גודל אתר (מ״ר)", "תיאור נוף", "הערות", "סוקר/ת", "זמן דגימה", "זמן דגימה (ISO)", "עודכן (ISO)", "עודכן ע״י", "יש תמונה"];
+        const header = ["ID", "מספר נקודה", "סוג ממצא", "קו רוחב", "קו אורך", "גובה", "דיוק", "תקופה", "מצב השתמרות (1-5)", "מפנה", "צפיפות ממצא", "גודל אתר (מ״ר)", "תיאור נוף", "הערות", "סוקר/ת", "זמן דגימה", "זמן דגימה (ISO)", "עודכן (ISO)", "עודכן ע״י", "יש תמונה"];
         let csv = "﻿" + header.map(csvField).join(",") + "\r\n"; // UTF-8 BOM for Excel
 
         points.forEach(p => {
