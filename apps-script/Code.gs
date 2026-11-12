@@ -19,7 +19,7 @@ const EDIT_WINDOW_HOURS = 2;
 const HEADERS = [
   'מזהה ייחודי', 'מספר נקודה', 'סוג ממצא', 'תקופה', 'מצב השתמרות (1-5)', 'מפנה',
   'צפיפות ממצא', 'גודל אתר (מ״ר)', 'תיאור נוף', 'הערות',
-  'קו רוחב', 'קו אורך', 'גובה (מ׳)', 'דיוק GPS (מ׳)',
+  'X (רשת ישראל החדשה)', 'Y (רשת ישראל החדשה)', 'גובה (מ׳)', 'דיוק GPS (מ׳)',
   'סוקר/ת', 'זמן דגימה', 'התקבל בגיליון', 'תמונה', 'מפה', 'עודכן מהאפליקציה'
 ];
 const COL_RECEIVED = 17, COL_PHOTO = 18;
@@ -63,14 +63,15 @@ function doPost(e) {
 
 function rowValues_(p, photo, received, updated) {
   const lat = Number(p.lat), lng = Number(p.lng);
+  // Older app versions sent only lat/lng; their X/Y cells stay empty
   return [
     text_(p.uid), text_(p.name), text_(p.findType), text_(p.period),
     num_(p.preservation), text_(p.aspect), text_(p.density), num_(p.siteSize),
     text_(p.landscape), text_(p.notes),
-    isFinite(lat) ? lat : '', isFinite(lng) ? lng : '', num_(p.alt), num_(p.acc),
+    num_(p.x), num_(p.y), num_(p.alt), num_(p.acc),
     text_(p.surveyor), p.createdAt ? new Date(p.createdAt) : text_(p.timeText),
     received, photo,
-    isFinite(lat) && isFinite(lng) ? 'https://www.google.com/maps?q=' + lat + ',' + lng : '',
+    isFinite(lat) && isFinite(lng) ? 'https://www.google.com/maps?q=' + lat.toFixed(6) + ',' + lng.toFixed(6) : '',
     updated
   ];
 }
@@ -100,9 +101,12 @@ function getSheet_() {
   if (sheet.getLastRow() === 0) {
     sheet.appendRow(HEADERS);
     sheet.setFrozenRows(1);
-    sheet.getRange(1, 1, 1, HEADERS.length).setFontWeight('bold');
     sheet.setRightToLeft(true);
   }
+  // keep the header row up to date when the script is updated
+  const head = sheet.getRange(1, 1, 1, HEADERS.length);
+  if (head.getValues()[0].join('|') !== HEADERS.join('|')) head.setValues([HEADERS]);
+  head.setFontWeight('bold');
   return sheet;
 }
 

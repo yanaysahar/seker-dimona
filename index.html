@@ -27,6 +27,8 @@
   <!-- Leaflet (local copy, so the map works without reception) -->
   <link rel="stylesheet" href="vendor/leaflet/leaflet.css" />
   <script src="vendor/leaflet/leaflet.js"></script>
+  <!-- Israeli TM Grid conversion -->
+  <script src="itm.js"></script>
 
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
@@ -191,18 +193,18 @@
           <label>גודל אתר (מ״ר)</label>
           <input type="number" step="any" min="0" inputmode="decimal" id="site-size" placeholder="לדוגמה: 600">
 
-          <label>מיקום GPS (נ"צ)</label>
+          <label>נ"צ — רשת ישראל החדשה</label>
           <button type="button" class="btn-gps" onclick="getLocation()">📍 דגום מיקום נוכחי</button>
           <div id="gps-status" class="gps-info"></div>
           
           <div class="row">
             <div>
-              <label>קו רוחב (Lat)</label>
-              <input type="number" step="any" id="lat" placeholder="31.7683" required>
+              <label>X</label>
+              <input type="number" step="any" inputmode="decimal" id="itm-x" placeholder="204500" required>
             </div>
             <div>
-              <label>קו אורך (Lng)</label>
-              <input type="number" step="any" id="lng" placeholder="35.2137" required>
+              <label>Y</label>
+              <input type="number" step="any" inputmode="decimal" id="itm-y" placeholder="553000" required>
             </div>
           </div>
           <div class="row">
@@ -308,7 +310,7 @@
         <h3>שחזור / ייבוא גיבוי</h3>
         <p style="font-size: 0.85rem; color: var(--ink-soft); margin-bottom: 8px;">נקודות שכבר קיימות במכשיר לא ישוכפלו.</p>
         <input type="file" id="import-file" accept=".json" onchange="importJSONBackup(event)">
-        <p style="font-size: 0.75rem; color: var(--muted); text-align: center; margin-top: 20px;">גרסה 2.4 · 12.11.2026</p>
+        <p style="font-size: 0.75rem; color: var(--muted); text-align: center; margin-top: 20px;">גרסה 2.5 · 12.11.2026</p>
       </div>
     </div>
 
@@ -344,6 +346,12 @@
     // Key used to recognise the same point when importing a backup twice
     function pointKey(p) {
       return p.createdAt || [p.name, p.lat, p.lng, p.timestamp].join('|');
+    }
+    // Israeli TM Grid (רשת ישראל החדשה) coordinates of a point, in whole metres
+    function itmOf(p) {
+      if (isFinite(p.x) && isFinite(p.y) && p.x !== null && p.y !== null) return { x: Math.round(p.x), y: Math.round(p.y) };
+      if (isFinite(p.lat) && isFinite(p.lng)) { const r = ITM.wgs84ToItm(p.lat, p.lng); return { x: Math.round(r.x), y: Math.round(r.y) }; }
+      return { x: '', y: '' };
     }
 
     // --- Find types (multi-select) ---
@@ -451,7 +459,7 @@
         uid: p.uid, name: p.name, findType: findTypeText(p), period: p.period || '',
         preservation: preservationValue(p), aspect: p.aspect || '', density: p.density || '',
         siteSize: siteSizeM2(p), landscape: p.landscape || '', notes: p.notes || '',
-        lat: p.lat, lng: p.lng, alt: p.alt, acc: p.acc, surveyor: p.surveyor || '',
+        x: itmOf(p).x, y: itmOf(p).y, lat: p.lat, lng: p.lng, alt: p.alt, acc: p.acc, surveyor: p.surveyor || '',
         createdAt: p.createdAt || '', timeText: displayTime(p),
         // after the first send, the photo is sent again only if it was changed
         image: (!p.syncedAt || p.imageDirty) ? (p.image || '') : '',
@@ -744,8 +752,9 @@
       status.innerText = "מאתר מיקום...";
       navigator.geolocation.getCurrentPosition(
         (pos) => {
-          document.getElementById('lat').value = pos.coords.latitude;
-          document.getElementById('lng').value = pos.coords.longitude;
+          const g = ITM.wgs84ToItm(pos.coords.latitude, pos.coords.longitude);
+          document.getElementById('itm-x').value = Math.round(g.x);
+          document.getElementById('itm-y').value = Math.round(g.y);
           document.getElementById('alt').value = pos.coords.altitude != null ? pos.coords.altitude.toFixed(1) : '';
           document.getElementById('acc').value = pos.coords.accuracy ? pos.coords.accuracy.toFixed(1) : 0;
           status.innerText = `מיקום נקלט בדיוק של ${pos.coords.accuracy.toFixed(1)} מטרים`;
@@ -828,8 +837,8 @@
         siteSize: document.getElementById('site-size').value === '' ? null : parseFloat(document.getElementById('site-size').value),
         siteSizeUnit: 'מ״ר',
         landscape: document.getElementById('landscape').value.trim(),
-        lat: parseFloat(document.getElementById('lat').value),
-        lng: parseFloat(document.getElementById('lng').value),
+        x: parseFloat(document.getElementById('itm-x').value),
+        y: parseFloat(document.getElementById('itm-y').value),
         alt: altVal === '' ? null : parseFloat(altVal),
         acc: parseFloat(document.getElementById('acc').value) || 0,
         periods: getSelectedPeriods(),
@@ -838,6 +847,12 @@
         notes: document.getElementById('notes').value,
         image: currentImageData
       };
+      if (!ITM.looksLikeItm(pointData.x, pointData.y)) {
+        if (ITM.looksLikeItm(pointData.y, pointData.x)) return alert("נראה ש-X ו-Y הפוכים. ברשת ישראל החדשה X הוא בערך 120,000–280,000 ו-Y בערך 380,000–800,000.");
+        return alert("הנ״צ לא נראה כמו רשת ישראל החדשה. X צריך להיות בערך 120,000–280,000 ו-Y בערך 380,000–800,000.");
+      }
+      const wgs = ITM.itmToWgs84(pointData.x, pointData.y); // kept for the map, Google Earth and GIS exports
+      pointData.lat = wgs.lat; pointData.lng = wgs.lng;
       pointData.period = pointData.periods.join(', ');
       pointData.findType = pointData.findTypes.join(', '); // text version, kept for exports and older backups
 
@@ -928,7 +943,7 @@
                 : item.dirty ? '<span class="sync-badge pending">⏳ עריכה ממתינה לשליחה</span><br>'
                 : '<span class="sync-badge sent">✓ נשלח</span><br>') : ''}
               <strong>${escapeHtml(item.name)}</strong> ${getFindTypes(item).map(t => `<span class="badge">${escapeHtml(t)}</span>`).join(' ')}
-              <br><small>📅 ${escapeHtml(displayTime(item))} | 📍 ${num(item.lat, 5)}, ${num(item.lng, 5)}${altText}</small>
+              <br><small>📅 ${escapeHtml(displayTime(item))} | 📍 X: ${itmOf(item).x} Y: ${itmOf(item).y}${altText}</small>
               ${item.surveyor ? `<br><small>👤 ${escapeHtml(item.surveyor)}</small>` : ''}
               ${item.updatedAt ? `<br><small>✏️ עודכן: ${escapeHtml(fmtDate(item.updatedAt))}${item.updatedBy ? ' ע״י ' + escapeHtml(item.updatedBy) : ''}</small>` : ''}
               ${item.period ? `<br><small>⏳ תקופה: ${escapeHtml(item.period)}</small>` : ''}
@@ -976,8 +991,8 @@
         document.getElementById('density').value = p.density ?? '';
         document.getElementById('site-size').value = siteSizeM2(p) ?? '';
         document.getElementById('landscape').value = p.landscape ?? '';
-        document.getElementById('lat').value = p.lat;
-        document.getElementById('lng').value = p.lng;
+        document.getElementById('itm-x').value = itmOf(p).x;
+        document.getElementById('itm-y').value = itmOf(p).y;
         document.getElementById('alt').value = p.alt ?? '';
         document.getElementById('acc').value = p.acc ?? '';
         setSelectedPeriods(getPeriods(p));
@@ -1037,6 +1052,7 @@
           if (isFinite(p.lat) && isFinite(p.lng)) {
             const marker = L.circleMarker([p.lat, p.lng], { radius: 9, color: '#34281f', weight: 2, fillColor: '#9a6630', fillOpacity: 0.9 }).bindPopup(`
               <b>${escapeHtml(p.name)}</b><br>
+              X: ${itmOf(p).x} Y: ${itmOf(p).y}<br>
               ${escapeHtml(findTypeText(p))}<br>
               ${p.density ? 'צפיפות: ' + escapeHtml(p.density) + '<br>' : ''}
               ${siteSizeText(p) ? 'גודל: ' + escapeHtml(siteSizeText(p)) + '<br>' : ''}
@@ -1089,13 +1105,14 @@
     function exportCSV() {
       getAllPoints(points => {
         if (!points.length) return alert("אין נתונים לייצוא");
-        const header = ["ID", "מספר נקודה", "סוג ממצא", "קו רוחב", "קו אורך", "גובה", "דיוק", "תקופה", "מצב השתמרות (1-5)", "מפנה", "צפיפות ממצא", "גודל אתר (מ״ר)", "תיאור נוף", "הערות", "סוקר/ת", "זמן דגימה", "זמן דגימה (ISO)", "עודכן (ISO)", "עודכן ע״י", "יש תמונה"];
+        const header = ["ID", "מספר נקודה", "סוג ממצא", "X (רשת ישראל החדשה)", "Y (רשת ישראל החדשה)", "גובה", "דיוק", "תקופה", "מצב השתמרות (1-5)", "מפנה", "צפיפות ממצא", "גודל אתר (מ״ר)", "תיאור נוף", "הערות", "סוקר/ת", "זמן דגימה", "זמן דגימה (ISO)", "עודכן (ISO)", "עודכן ע״י", "יש תמונה", "Lat (WGS84)", "Lon (WGS84)"];
         let csv = "﻿" + header.map(csvField).join(",") + "\r\n"; // UTF-8 BOM for Excel
 
         points.forEach(p => {
-          csv += [p.id, p.name, findTypeText(p), p.lat, p.lng, p.alt ?? '', p.acc, p.period, preservationValue(p), p.aspect || '',
+          csv += [p.id, p.name, findTypeText(p), itmOf(p).x, itmOf(p).y, p.alt ?? '', p.acc, p.period, preservationValue(p), p.aspect || '',
                   p.density || '', siteSizeM2(p) ?? '', p.landscape || '', p.notes, p.surveyor || '',
-                  displayTime(p), p.createdAt || '', p.updatedAt || '', p.updatedBy || '', p.image ? 'כן' : 'לא']
+                  displayTime(p), p.createdAt || '', p.updatedAt || '', p.updatedBy || '', p.image ? 'כן' : 'לא',
+                  isFinite(p.lat) ? Number(p.lat).toFixed(7) : '', isFinite(p.lng) ? Number(p.lng).toFixed(7) : '']
                  .map(csvField).join(",") + "\r\n";
         });
 
@@ -1118,6 +1135,8 @@
             properties: {
               id: p.id,
               name: p.name,
+              itm_x: itmOf(p).x,
+              itm_y: itmOf(p).y,
               findType: findTypeText(p),
               findTypes: getFindTypes(p),
               density: p.density || null,
@@ -1153,7 +1172,8 @@
     <name>סקר דימונה</name>`;
 
         points.filter(p => isFinite(p.lat) && isFinite(p.lng)).forEach(p => {
-          const desc = `סוג: ${escapeHtml(findTypeText(p))}<br>
+          const desc = `X: ${itmOf(p).x} &nbsp; Y: ${itmOf(p).y}<br>
+        סוג: ${escapeHtml(findTypeText(p))}<br>
         צפיפות: ${escapeHtml(p.density)}<br>
         גודל אתר: ${escapeHtml(siteSizeText(p))}<br>
         נוף: ${escapeHtml(p.landscape)}<br>
@@ -1214,6 +1234,7 @@
             if (!p || typeof p !== 'object' || !isFinite(parseFloat(p.lat)) || !isFinite(parseFloat(p.lng))) { skipped++; return; }
             p.lat = parseFloat(p.lat);
             p.lng = parseFloat(p.lng);
+            if (!isFinite(p.x) || !isFinite(p.y) || p.x === null || p.y === null) { const r = ITM.wgs84ToItm(p.lat, p.lng); p.x = Math.round(r.x); p.y = Math.round(r.y); }
             const key = pointKey(p);
             if (known.has(key)) { skipped++; return; }
             known.add(key);
