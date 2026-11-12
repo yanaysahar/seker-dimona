@@ -1,6 +1,6 @@
 // Service worker: makes the app load without reception.
 // Bump APP_CACHE when changing any of the app files below.
-const APP_CACHE = 'archeo-app-v7';
+const APP_CACHE = 'archeo-app-v8';
 const TILE_CACHE = 'archeo-tiles-v1';
 const MAX_TILES = 3000;
 
@@ -10,6 +10,8 @@ const APP_FILES = [
   './manifest.json',
   './icon-192.png',
   './icon-512.png',
+  './apple-touch-icon.png',
+  './favicon.png',
   './og-image.png',
   './vendor/leaflet/leaflet.js',
   './vendor/leaflet/leaflet.css',
