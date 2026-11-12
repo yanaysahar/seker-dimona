@@ -262,6 +262,7 @@
         <h3>שחזור / ייבוא גיבוי</h3>
         <p style="font-size: 0.85rem; color: #666; margin-bottom: 8px;">נקודות שכבר קיימות במכשיר לא ישוכפלו.</p>
         <input type="file" id="import-file" accept=".json" onchange="importJSONBackup(event)">
+        <p style="font-size: 0.75rem; color: #aaa; text-align: center; margin-top: 20px;">גרסה 1.2 · 12.11.2026</p>
       </div>
     </div>
 
@@ -363,7 +364,7 @@
 
     // --- Offline support ---
     if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+      window.addEventListener('load', () => navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).catch(() => {}));
     }
     function updateOnlineBanner() {
       document.getElementById('offline-banner').style.display = navigator.onLine ? 'none' : 'block';

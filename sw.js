@@ -1,6 +1,6 @@
 // Service worker: makes the app load without reception.
 // Bump APP_CACHE when changing any of the app files below.
-const APP_CACHE = 'archeo-app-v4';
+const APP_CACHE = 'archeo-app-v5';
 const TILE_CACHE = 'archeo-tiles-v1';
 const MAX_TILES = 3000;
 
@@ -66,7 +66,7 @@ self.addEventListener('fetch', event => {
   // Page itself: network first (to get updates), cache when offline.
   if (req.mode === 'navigate') {
     event.respondWith(
-      fetch(req).then(res => {
+      fetch(req, { cache: 'no-cache' }).then(res => {
         const copy = res.clone();
         caches.open(APP_CACHE).then(c => c.put('./index.html', copy));
         return res;
