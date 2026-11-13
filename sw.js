@@ -1,6 +1,6 @@
 // Service worker: makes the app load without reception.
 // Bump APP_CACHE when changing any of the app files below.
-const APP_CACHE = 'archeo-app-v19';
+const APP_CACHE = 'archeo-app-v20';
 const TILE_CACHE = 'archeo-tiles-v1';
 const MAX_TILES = 3000;
 

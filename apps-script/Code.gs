@@ -14,13 +14,13 @@
 const SHEET_NAME = 'נקודות';
 const PHOTO_FOLDER = 'סקר דימונה - תמונות';
 const EDIT_WINDOW_HOURS = 2;
-const SCRIPT_VERSION = 3; // shown when the web-app link is opened in a browser
+const SCRIPT_VERSION = 4; // shown when the web-app link is opened in a browser
 
 const HEADERS = [
   'מזהה ייחודי', 'מספר נקודה', 'סוג ממצא', 'תקופה', 'מצב השתמרות (1-5)', 'מפנה',
   'צפיפות ממצא', 'גודל אתר (מ״ר)', 'תיאור נוף', 'הערות',
   'X (רשת ישראל החדשה)', 'Y (רשת ישראל החדשה)', 'גובה (מ׳)', 'דיוק GPS (מ׳)',
-  'סוקר/ת', 'זמן דגימה', 'התקבל בגיליון', 'תמונה', 'מפה', 'עודכן מהאפליקציה'
+  'סוקר/ת', 'זמן דגימה', 'התקבל בגיליון', 'תמונה', 'מפה', 'עודכן מהאפליקציה', 'שרטוט מבנה (WKT, רשת ישראל)'
 ];
 const COL_RECEIVED = 17, COL_PHOTO = 18;
 
@@ -78,7 +78,7 @@ function rowValues_(p, photo, received, updated) {
     text_(p.surveyor), p.createdAt ? new Date(p.createdAt) : text_(p.timeText),
     received, photo,
     isFinite(lat) && isFinite(lng) ? 'https://www.google.com/maps?q=' + lat.toFixed(6) + ',' + lng.toFixed(6) : '',
-    updated
+    updated, text_(p.structure)
   ];
 }
 

@@ -16,7 +16,7 @@
   <meta property="og:image:height" content="630">
   <meta property="og:locale" content="he_IL">
   <meta name="twitter:card" content="summary_large_image">
-  <link rel="manifest" href="manifest.json?v=19">
+  <link rel="manifest" href="manifest.json?v=20">
   <link rel="icon" type="image/png" href="favicon.png">
   <link rel="apple-touch-icon" href="apple-touch-icon.png?v=19">
   <meta name="apple-mobile-web-app-capable" content="yes">
@@ -128,6 +128,13 @@
     #install-banner button.install-now { width: auto; padding: 8px 14px; margin-top: 8px; background: var(--umber); }
     button.btn-share { background-color: var(--olive); }
     #share-link { direction: ltr; text-align: left; font-size: 0.85rem; background: var(--sand); }
+    .structure-box { border: 1px dashed var(--line); border-radius: 8px; padding: 10px; background: #fff; margin-top: 6px; }
+    .corner-list { margin: 8px 0 0; padding: 0 22px 0 0; font-size: 0.85rem; }
+    .corner-list li { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 0; border-bottom: 1px solid #f1eadb; }
+    .corner-list li button { width: auto; margin: 0; padding: 2px 10px; font-size: 0.85rem; background: var(--muted); }
+    .closed-toggle { display: flex; align-items: center; gap: 8px; font-weight: normal; font-size: 0.9rem; margin-top: 8px; }
+    .closed-toggle input { width: 20px; height: 20px; margin: 0; flex: none; accent-color: var(--umber); }
+    .structure-summary { font-size: 0.85rem; color: var(--ink-soft); margin-top: 6px; }
     #offline-banner { display: none; background: var(--ochre); color: var(--flint); text-align: center; font-size: 0.85rem; padding: 6px; }
   </style>
 </head>
@@ -216,6 +223,16 @@
               <label>דיוק (מטרים)</label>
               <input type="number" step="any" id="acc" placeholder="0" readonly>
             </div>
+          </div>
+
+          <label>שרטוט מבנה <span class="hint">(עומדים בכל פינה של המבנה ולוחצים — הפינות יתחברו לקירות על המפה)</span></label>
+          <div class="structure-box">
+            <button type="button" class="btn-gps" onclick="addCorner()">📍 הוסף פינה במיקום הנוכחי</button>
+            <div id="corner-status" class="gps-info"></div>
+            <ol id="corner-list" class="corner-list"></ol>
+            <label class="closed-toggle"><input type="checkbox" id="structure-closed" checked onchange="renderCorners()"> מבנה סגור (לחבר את הפינה האחרונה לראשונה)</label>
+            <div id="structure-summary" class="structure-summary"></div>
+            <button type="button" id="btn-clear-corners" class="btn-cancel" style="display:none;" onclick="clearCorners()">🗑️ נקה שרטוט</button>
           </div>
 
           <label>תמונה</label>
@@ -310,7 +327,7 @@
         <h3>שחזור / ייבוא גיבוי</h3>
         <p style="font-size: 0.85rem; color: var(--ink-soft); margin-bottom: 8px;">נקודות שכבר קיימות במכשיר לא ישוכפלו.</p>
         <input type="file" id="import-file" accept=".json" onchange="importJSONBackup(event)">
-        <p style="font-size: 0.75rem; color: var(--muted); text-align: center; margin-top: 20px;">גרסה 2.6 · 12.11.2026</p>
+        <p style="font-size: 0.75rem; color: var(--muted); text-align: center; margin-top: 20px;">גרסה 2.7 · 13.11.2026</p>
       </div>
     </div>
 
@@ -458,7 +475,7 @@
       return {
         uid: p.uid, name: p.name, findType: findTypeText(p), period: p.period || '',
         preservation: preservationValue(p), aspect: p.aspect || '', density: p.density || '',
-        siteSize: siteSizeM2(p), landscape: p.landscape || '', notes: p.notes || '',
+        siteSize: siteSizeM2(p), landscape: p.landscape || '', notes: p.notes || '', structure: structureWkt(p),
         x: itmOf(p).x, y: itmOf(p).y, lat: p.lat, lng: p.lng, alt: p.alt, acc: p.acc, surveyor: p.surveyor || '',
         createdAt: p.createdAt || '', timeText: displayTime(p),
         // after the first send, the photo is sent again only if it was changed
@@ -800,6 +817,76 @@
       );
     }
 
+    // --- Structure sketch: corners sampled by GPS, joined into walls ---
+    let currentCorners = [];
+    function getCorners(p) { return p && p.structure && Array.isArray(p.structure.corners) ? p.structure.corners : []; }
+    function isClosed(p) { return getCorners(p).length >= 3 && p.structure.closed !== false; }
+    function structureLength(corners, closed) {
+      let d = 0;
+      for (let i = 1; i < corners.length; i++) d += Math.hypot(corners[i].x - corners[i - 1].x, corners[i].y - corners[i - 1].y);
+      if (closed && corners.length >= 3) d += Math.hypot(corners[0].x - corners.at(-1).x, corners[0].y - corners.at(-1).y);
+      return d;
+    }
+    function structureArea(corners) {
+      let a = 0;
+      for (let i = 0; i < corners.length; i++) { const p = corners[i], q = corners[(i + 1) % corners.length]; a += p.x * q.y - q.x * p.y; }
+      return Math.abs(a) / 2;
+    }
+    function structureText(p) {
+      const c = getCorners(p);
+      if (c.length < 2) return '';
+      const closed = isClosed(p);
+      let t = `${c.length} פינות, ${closed ? 'היקף' : 'אורך קירות'} ${Math.round(structureLength(c, closed) * 10) / 10} מ׳`;
+      if (closed) t += `, שטח ${Math.round(structureArea(c))} מ״ר`;
+      return t;
+    }
+    // Well-Known Text in the Israeli grid — QGIS reads it directly
+    function structureWkt(p) {
+      const c = getCorners(p);
+      if (c.length < 2) return '';
+      const pts = c.map(k => `${k.x} ${k.y}`);
+      return isClosed(p) ? `POLYGON((${pts.concat(pts[0]).join(', ')}))` : `LINESTRING(${pts.join(', ')})`;
+    }
+
+    function addCorner() {
+      const status = document.getElementById('corner-status');
+      if (!navigator.geolocation) { status.innerText = "GPS אינו נתמך בדפדפן זה"; return; }
+      status.innerText = "מאתר מיקום פינה...";
+      navigator.geolocation.getCurrentPosition(pos => {
+        const g = ITM.wgs84ToItm(pos.coords.latitude, pos.coords.longitude);
+        currentCorners.push({
+          x: Math.round(g.x * 10) / 10, y: Math.round(g.y * 10) / 10,
+          lat: pos.coords.latitude, lng: pos.coords.longitude,
+          acc: pos.coords.accuracy ? Math.round(pos.coords.accuracy * 10) / 10 : null
+        });
+        status.innerText = `פינה ${currentCorners.length} נקלטה (דיוק ${pos.coords.accuracy.toFixed(1)} מ׳)`;
+        // the first corner also fills the point's coordinates if they are still empty
+        if (currentCorners.length === 1 && !document.getElementById('itm-x').value && !document.getElementById('itm-y').value) {
+          document.getElementById('itm-x').value = Math.round(g.x);
+          document.getElementById('itm-y').value = Math.round(g.y);
+          document.getElementById('alt').value = pos.coords.altitude != null ? pos.coords.altitude.toFixed(1) : '';
+          document.getElementById('acc').value = pos.coords.accuracy ? pos.coords.accuracy.toFixed(1) : 0;
+        }
+        renderCorners();
+      }, err => { status.innerText = "שגיאה בקליטת GPS: " + err.message; },
+      { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 });
+    }
+
+    function removeCorner(i) { currentCorners.splice(i, 1); renderCorners(); }
+    function clearCorners() {
+      if (currentCorners.length && !confirm("למחוק את כל הפינות של השרטוט?")) return;
+      currentCorners = []; document.getElementById('corner-status').innerText = ''; renderCorners();
+    }
+
+    function renderCorners() {
+      document.getElementById('corner-list').innerHTML = currentCorners.map((c, i) =>
+        `<li><span>פינה ${i + 1}: <span dir="ltr">X ${c.x} · Y ${c.y}</span>${c.acc != null ? ` <span class="hint">· דיוק ${c.acc} מ׳</span>` : ''}</span>
+         <button type="button" onclick="removeCorner(${i})" aria-label="מחק פינה ${i + 1}">✕</button></li>`).join('');
+      const fake = { structure: { corners: currentCorners, closed: document.getElementById('structure-closed').checked } };
+      document.getElementById('structure-summary').innerText = currentCorners.length === 1 ? 'צריך לפחות 2 פינות כדי לשרטט קיר' : structureText(fake);
+      document.getElementById('btn-clear-corners').style.display = currentCorners.length ? 'block' : 'none';
+    }
+
     // --- Image Resize & Compression ---
     function showPreview(src) {
       const preview = document.getElementById('img-preview');
@@ -879,8 +966,10 @@
         preservation: getChoice('preservation'),
         aspect: getChoice('aspect'),
         notes: document.getElementById('notes').value,
-        image: currentImageData
+        image: currentImageData,
+        structure: currentCorners.length ? { corners: currentCorners.slice(), closed: document.getElementById('structure-closed').checked } : null
       };
+      if (currentCorners.length === 1) return alert("בשרטוט המבנה יש רק פינה אחת. הוסיפו עוד פינה או נקו את השרטוט.");
       if (!ITM.looksLikeItm(pointData.x, pointData.y)) {
         if (ITM.looksLikeItm(pointData.y, pointData.x)) return alert("נראה ש-X ו-Y הפוכים. ברשת ישראל החדשה X הוא בערך 120,000–280,000 ו-Y בערך 380,000–800,000.");
         return alert("הנ״צ לא נראה כמו רשת ישראל החדשה. X צריך להיות בערך 120,000–280,000 ו-Y בערך 380,000–800,000.");
@@ -946,6 +1035,9 @@
       document.getElementById('point-id').value = '';
       setSelectedPeriods([]);
       removeImage();
+      currentCorners = [];
+      document.getElementById('corner-status').innerText = '';
+      renderCorners();
       document.getElementById('gps-status').innerText = '';
       document.getElementById('form-title').innerText = 'הוספת נקודת סקר';
       document.getElementById('btn-save').innerText = '💾 שמור נקודה';
@@ -986,6 +1078,7 @@
               ${item.aspect ? `<br><small>🧭 מפנה: ${escapeHtml(item.aspect)}</small>` : ''}
               ${item.density ? `<br><small>🔸 צפיפות: ${escapeHtml(item.density)}</small>` : ''}
               ${siteSizeText(item) ? `<br><small>📐 גודל אתר: ${escapeHtml(siteSizeText(item))}</small>` : ''}
+              ${structureText(item) ? `<br><small>🧱 שרטוט מבנה: ${escapeHtml(structureText(item))}</small>` : ''}
               ${item.landscape ? `<br><small>⛰️ נוף: ${escapeHtml(item.landscape)}</small>` : ''}
               ${item.notes ? `<p class="notes-text">${escapeHtml(item.notes)}</p>` : ''}
               ${item.image ? `<img src="${escapeHtml(item.image)}" alt="">` : ''}
@@ -1042,6 +1135,9 @@
         setChoice('preservation', preservationValue(p));
         setChoice('aspect', p.aspect || '');
         document.getElementById('notes').value = p.notes ?? '';
+        currentCorners = getCorners(p).map(c => ({ ...c }));
+        document.getElementById('structure-closed').checked = !p.structure || p.structure.closed !== false;
+        renderCorners();
 
         if (p.image) {
           currentImageData = p.image;
@@ -1109,22 +1205,31 @@
         if (cursor) {
           const p = cursor.value;
           if (isFinite(p.lat) && isFinite(p.lng)) {
-            const marker = L.circleMarker([p.lat, p.lng], { radius: 9, color: '#34281f', weight: 2, fillColor: '#9a6630', fillOpacity: 0.9 }).bindPopup(`
+            const popup = `
               <b>${escapeHtml(p.name)}</b><br>
               X: ${itmOf(p).x} Y: ${itmOf(p).y}<br>
               ${escapeHtml(findTypeText(p))}<br>
               ${p.density ? 'צפיפות: ' + escapeHtml(p.density) + '<br>' : ''}
               ${siteSizeText(p) ? 'גודל: ' + escapeHtml(siteSizeText(p)) + '<br>' : ''}
+              ${structureText(p) ? '🧱 ' + escapeHtml(structureText(p)) + '<br>' : ''}
               ${p.surveyor ? '👤 ' + escapeHtml(p.surveyor) + '<br>' : ''}
               ${p.notes ? escapeHtml(p.notes) + '<br>' : ''}
               ${p.image ? `<img src="${escapeHtml(p.image)}" style="width:100px;margin-top:5px;border-radius:4px;">` : ''}
-            `);
+            `;
+            const corners = getCorners(p).filter(c => isFinite(c.lat) && isFinite(c.lng));
+            if (corners.length >= 2) {
+              const ll = corners.map(c => [c.lat, c.lng]);
+              const style = { color: '#7a5230', weight: 4, fillColor: '#9a6630', fillOpacity: 0.25 };
+              markersGroup.addLayer((isClosed(p) ? L.polygon(ll, style) : L.polyline(ll, style)).bindPopup(popup));
+              ll.forEach(c => markersGroup.addLayer(L.circleMarker(c, { radius: 4, color: '#34281f', weight: 1, fillColor: '#fcf9f0', fillOpacity: 1 })));
+            }
+            const marker = L.circleMarker([p.lat, p.lng], { radius: 9, color: '#34281f', weight: 2, fillColor: '#9a6630', fillOpacity: 0.9 }).bindPopup(popup);
             markersGroup.addLayer(marker);
           }
           cursor.continue();
         } else {
           if (markersGroup.getLayers().length > 0) {
-            mapInstance.fitBounds(markersGroup.getBounds().pad(0.1), { maxZoom: 17 });
+            mapInstance.fitBounds(markersGroup.getBounds().pad(0.1), { maxZoom: 19 });
           }
         }
       };
@@ -1164,14 +1269,14 @@
     function exportCSV() {
       getAllPoints(points => {
         if (!points.length) return alert("אין נתונים לייצוא");
-        const header = ["ID", "מספר נקודה", "סוג ממצא", "X (רשת ישראל החדשה)", "Y (רשת ישראל החדשה)", "גובה", "דיוק", "תקופה", "מצב השתמרות (1-5)", "מפנה", "צפיפות ממצא", "גודל אתר (מ״ר)", "תיאור נוף", "הערות", "סוקר/ת", "זמן דגימה", "זמן דגימה (ISO)", "עודכן (ISO)", "עודכן ע״י", "יש תמונה", "Lat (WGS84)", "Lon (WGS84)"];
+        const header = ["ID", "מספר נקודה", "סוג ממצא", "X (רשת ישראל החדשה)", "Y (רשת ישראל החדשה)", "גובה", "דיוק", "תקופה", "מצב השתמרות (1-5)", "מפנה", "צפיפות ממצא", "גודל אתר (מ״ר)", "תיאור נוף", "הערות", "סוקר/ת", "זמן דגימה", "זמן דגימה (ISO)", "עודכן (ISO)", "עודכן ע״י", "יש תמונה", "Lat (WGS84)", "Lon (WGS84)", "שרטוט מבנה", "שרטוט מבנה (WKT, רשת ישראל)"];
         let csv = "﻿" + header.map(csvField).join(",") + "\r\n"; // UTF-8 BOM for Excel
 
         points.forEach(p => {
           csv += [p.id, p.name, findTypeText(p), itmOf(p).x, itmOf(p).y, p.alt ?? '', p.acc, p.period, preservationValue(p), p.aspect || '',
                   p.density || '', siteSizeM2(p) ?? '', p.landscape || '', p.notes, p.surveyor || '',
                   displayTime(p), p.createdAt || '', p.updatedAt || '', p.updatedBy || '', p.image ? 'כן' : 'לא',
-                  isFinite(p.lat) ? Number(p.lat).toFixed(7) : '', isFinite(p.lng) ? Number(p.lng).toFixed(7) : '']
+                  isFinite(p.lat) ? Number(p.lat).toFixed(7) : '', isFinite(p.lng) ? Number(p.lng).toFixed(7) : '', structureText(p), structureWkt(p)]
                  .map(csvField).join(",") + "\r\n";
         });
 
@@ -1183,6 +1288,19 @@
     function exportGeoJSON() {
       getAllPoints(points => {
         if (!points.length) return alert("אין נתונים לייצוא");
+        const structures = points.filter(p => getCorners(p).length >= 2).map(p => {
+          const ring = getCorners(p).map(c => [c.lng, c.lat]);
+          return {
+            type: "Feature",
+            geometry: isClosed(p) ? { type: "Polygon", coordinates: [ring.concat([ring[0]])] } : { type: "LineString", coordinates: ring },
+            properties: {
+              name: p.name, kind: 'structure', closed: isClosed(p),
+              length_m: Math.round(structureLength(getCorners(p), isClosed(p)) * 10) / 10,
+              area_m2: isClosed(p) ? Math.round(structureArea(getCorners(p))) : null,
+              wkt_itm: structureWkt(p), surveyor: p.surveyor || null
+            }
+          };
+        });
         const geojson = {
           type: "FeatureCollection",
           features: points.filter(p => isFinite(p.lat) && isFinite(p.lng)).map(p => ({
@@ -1213,9 +1331,11 @@
               altitude_m: p.alt ?? null,
               created: p.createdAt || null,
               updated: p.updatedAt || null,
-              timestamp: displayTime(p)
+              timestamp: displayTime(p),
+              structure: structureText(p) || null,
+              structure_wkt_itm: structureWkt(p) || null
             }
-          }))
+          })).concat(structures)
         };
         downloadFile(JSON.stringify(geojson, null, 2), `archaeo_survey_${fileStamp()}.geojson`, "application/geo+json");
       });
@@ -1228,7 +1348,8 @@
         let kml = `<?xml version="1.0" encoding="UTF-8"?>
 <kml xmlns="http://www.opengis.net/kml/2.2">
   <Document>
-    <name>סקר דימונה</name>`;
+    <name>סקר דימונה</name>
+    <Style id="structure"><LineStyle><color>ff30527a</color><width>3</width></LineStyle><PolyStyle><color>4030669a</color></PolyStyle></Style>`;
 
         points.filter(p => isFinite(p.lat) && isFinite(p.lng)).forEach(p => {
           const desc = `X: ${itmOf(p).x} &nbsp; Y: ${itmOf(p).y}<br>
@@ -1239,6 +1360,7 @@
         תקופה: ${escapeHtml(p.period)}<br>
         השתמרות (1-5): ${escapeHtml(preservationValue(p))}<br>
         מפנה: ${escapeHtml(p.aspect)}<br>
+        שרטוט מבנה: ${escapeHtml(structureText(p))}<br>
         סוקר/ת: ${escapeHtml(p.surveyor)}<br>
         הערות: ${escapeHtml(p.notes).replace(/\n/g, '<br>')}<br>
         זמן: ${escapeHtml(displayTime(p))}`;
@@ -1250,6 +1372,18 @@
         <coordinates>${p.lng},${p.lat},${isFinite(p.alt) && p.alt != null ? p.alt : 0}</coordinates>
       </Point>
     </Placemark>`;
+          const corners = getCorners(p);
+          if (corners.length >= 2) {
+            const ring = corners.map(c => `${c.lng},${c.lat},0`);
+            kml += `
+    <Placemark>
+      <name>${escapeXml(p.name)} — מבנה</name>
+      <styleUrl>#structure</styleUrl>
+      ${isClosed(p)
+        ? `<Polygon><tessellate>1</tessellate><outerBoundaryIs><LinearRing><coordinates>${ring.concat(ring[0]).join(' ')}</coordinates></LinearRing></outerBoundaryIs></Polygon>`
+        : `<LineString><tessellate>1</tessellate><coordinates>${ring.join(' ')}</coordinates></LineString>`}
+    </Placemark>`;
+          }
         });
 
         kml += `
